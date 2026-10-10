@@ -36,3 +36,7 @@ export function crearUsuario(data: UsuarioCreate): Promise<Usuario> {
 export function actualizarUsuario(id: number, data: UsuarioUpdate): Promise<Usuario> {
   return apiJson<Usuario>(`/api/usuarios/${id}`, 'PUT', data)
 }
+
+export function eliminarUsuario(id: number): Promise<void> {
+  return apiFetch<void>(`/api/usuarios/${id}`, { method: 'DELETE' })
+}

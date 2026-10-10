@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 from typing import Optional
 from app.db.models import Usuario
@@ -68,6 +69,27 @@ def actualizar_perfil(db: Session, usuario: Usuario, datos_in: PerfilUpdate):
     db.commit()
     db.refresh(usuario)
     return usuario
+
+
+def eliminar_usuario(db: Session, user_id: int):
+    usuario = get_usuario(db, user_id)
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    try:
+        db.delete(usuario)
+        db.commit()
+    except IntegrityError:
+        # El usuario tiene registros asociados (ventas, caja, inventario): no se
+        # puede borrar sin romper el historial. Se sugiere desactivarlo.
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No se puede eliminar: el usuario tiene movimientos registrados "
+                "(ventas, caja o inventario). Desactívalo en su lugar."
+            ),
+        )
 
 
 def cambiar_password(db: Session, usuario: Usuario, datos_in: PasswordUpdate):

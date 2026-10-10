@@ -328,7 +328,8 @@ select:focus {
 .tabla-wrap {
   border: 1px solid var(--borde);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--tarjeta);
 }
 
@@ -732,5 +733,130 @@ select:focus {
   border-top: none;
   background: var(--tarjeta);
   border-radius: 0 0 12px 12px;
+}
+
+/* ---------- Responsive (móvil) ---------- */
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+  }
+
+  /* La barra lateral pasa a ser una barra superior compacta:
+     fila 1 = marca + sesión, fila 2 = navegación deslizable. */
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--borde);
+  }
+
+  .sidebar__brand {
+    order: 1;
+    padding: 0;
+  }
+
+  .sidebar__foot {
+    order: 2;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .sidebar__foot .boton {
+    width: auto;
+    margin: 0;
+  }
+
+  .usuario-chip__info {
+    display: none;
+  }
+
+  .nav {
+    order: 3;
+    flex: 1 0 100%;
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav__link {
+    white-space: nowrap;
+    padding: 9px 12px;
+  }
+
+  .contenido {
+    padding: 16px 14px;
+  }
+
+  .pagina__head {
+    flex-wrap: wrap;
+  }
+
+  .pagina__head h1 {
+    font-size: 22px;
+  }
+
+  /* Las tablas anchas se deslizan en horizontal en vez de recortarse. */
+  .tabla th,
+  .tabla td {
+    white-space: nowrap;
+    padding: 10px 12px;
+  }
+
+  /* Formularios y cuadrículas a una sola columna. */
+  .fila-campos,
+  .perfil-grid,
+  .dash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Controles más cómodos para el dedo. */
+  .boton {
+    padding: 12px 14px;
+  }
+
+  .boton--mini {
+    padding: 8px 12px;
+  }
+
+  .acciones {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  /* En pantallas muy angostas se libera espacio quitando el chip de perfil
+     de la barra superior (el perfil sigue en la navegación). */
+  .usuario-chip {
+    display: none;
+  }
+
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal {
+    padding: 18px;
+  }
+
+  .tarjeta {
+    padding: 22px;
+  }
 }
 

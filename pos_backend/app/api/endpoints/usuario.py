@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -35,3 +35,10 @@ def actualizar_usuario(user_id: int, usuario: UsuarioUpdate, db: Session = Depen
     if usuario.activo is False and user_id == current_user.id:
         raise HTTPException(status_code=400, detail="No puedes desactivar tu propio usuario")
     return crud_usuario.actualizar_usuario(db=db, user_id=user_id, usuario_in=usuario)
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_usuario(user_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propio usuario")
+    crud_usuario.eliminar_usuario(db=db, user_id=user_id)
+    return None

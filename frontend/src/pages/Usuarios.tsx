@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import {
   actualizarUsuario,
   crearUsuario,
+  eliminarUsuario,
   paginaUsuarios,
   type UsuarioCreate,
 } from '../api/usuarios'
@@ -25,6 +26,23 @@ export function Usuarios() {
     abierto: false,
     usuario: null,
   })
+  const [errorAccion, setErrorAccion] = useState('')
+  const [eliminandoId, setEliminandoId] = useState<number | null>(null)
+
+  async function eliminar(u: Usuario) {
+    if (!window.confirm(`¿Eliminar al usuario «${u.username}»? Esta acción no se puede deshacer.`))
+      return
+    setErrorAccion('')
+    setEliminandoId(u.id)
+    try {
+      await eliminarUsuario(u.id)
+      recargar()
+    } catch (err) {
+      setErrorAccion(err instanceof Error ? err.message : 'No se pudo eliminar el usuario')
+    } finally {
+      setEliminandoId(null)
+    }
+  }
 
   return (
     <div className="pagina">
@@ -48,6 +66,7 @@ export function Usuarios() {
       </div>
 
       {error && <p className="error">{error}</p>}
+      {errorAccion && <p className="error">{errorAccion}</p>}
 
       {cargando ? (
         <p className="ayuda">Cargando…</p>
@@ -91,6 +110,16 @@ export function Usuarios() {
                           onClick={() => setForm({ abierto: true, usuario: u })}
                         >
                           Editar
+                        </button>
+                        <button
+                          className="boton boton--mini boton--danger"
+                          disabled={u.id === actual?.id || eliminandoId === u.id}
+                          title={
+                            u.id === actual?.id ? 'No puedes eliminar tu propio usuario' : undefined
+                          }
+                          onClick={() => void eliminar(u)}
+                        >
+                          {eliminandoId === u.id ? 'Eliminando…' : 'Eliminar'}
                         </button>
                       </div>
                     </td>
