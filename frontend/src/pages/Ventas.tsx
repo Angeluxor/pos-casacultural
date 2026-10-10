@@ -133,8 +133,8 @@ export function Ventas() {
         />
       ) : (
         <>
-          <div className="tabla-wrap">
-            <table className="tabla">
+          <div className="tabla-wrap tabla-wrap--cards">
+            <table className="tabla tabla--cards">
               <thead>
                 <tr>
                   <th>#</th>
@@ -149,19 +149,23 @@ export function Ventas() {
               <tbody>
                 {facturas.map((f) => (
                   <tr key={f.id}>
-                    <td>{f.id}</td>
-                    <td>{formatoFecha(f.fecha)}</td>
-                    <td>
+                    <td data-label="Factura">#{f.id}</td>
+                    <td data-label="Fecha">{formatoFecha(f.fecha)}</td>
+                    <td data-label="Cliente">
                       {f.cliente_id
                         ? clientesPorId.get(f.cliente_id)?.nombre ?? f.cliente_id
                         : '—'}
                     </td>
-                    <td className="derecha">{moneda.format(f.total)}</td>
-                    <td className="derecha">{moneda.format(f.saldo)}</td>
-                    <td>
+                    <td data-label="Total" className="derecha">
+                      {moneda.format(f.total)}
+                    </td>
+                    <td data-label="Saldo" className="derecha">
+                      {moneda.format(f.saldo)}
+                    </td>
+                    <td data-label="Estado">
                       <span className={claseEstado(f.estado)}>{f.estado}</span>
                     </td>
-                    <td>
+                    <td className="celda-accion">
                       <div className="acciones-fila">
                         <button className="boton boton--mini" onClick={() => setCobrar(f)}>
                           Ver
@@ -337,7 +341,7 @@ function FormVenta({
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Nueva venta</h2>
         {error && <p className="error">{error}</p>}
@@ -414,8 +418,8 @@ function FormVenta({
           )}
         </div>
 
-        <div className="tabla-wrap">
-          <table className="tabla">
+        <div className="tabla-wrap tabla-wrap--cards">
+          <table className="tabla tabla--cards">
             <thead>
               <tr>
                 <th>Producto</th>
@@ -428,9 +432,11 @@ function FormVenta({
             <tbody>
               {items.map((i) => (
                 <tr key={i.producto.id}>
-                  <td>{i.producto.nombre}</td>
-                  <td className="derecha">{moneda.format(i.producto.precio)}</td>
-                  <td className="derecha">
+                  <td data-label="Producto">{i.producto.nombre}</td>
+                  <td data-label="Precio" className="derecha">
+                    {moneda.format(i.producto.precio)}
+                  </td>
+                  <td data-label="Cant." className="derecha">
                     <input
                       className="input-mini"
                       type="number"
@@ -439,8 +445,10 @@ function FormVenta({
                       onChange={(e) => cambiarCantidad(i.producto.id, Number(e.target.value))}
                     />
                   </td>
-                  <td className="derecha">{moneda.format(i.producto.precio * i.cantidad)}</td>
-                  <td>
+                  <td data-label="Subtotal" className="derecha">
+                    {moneda.format(i.producto.precio * i.cantidad)}
+                  </td>
+                  <td className="celda-accion">
                     <div className="acciones-fila">
                       <button
                         type="button"
@@ -455,7 +463,7 @@ function FormVenta({
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="ayuda">
+                  <td colSpan={5} data-label="" className="ayuda">
                     Agrega productos a la venta
                   </td>
                 </tr>
@@ -643,7 +651,7 @@ function FormCobro({
   const pagado = f.total - f.saldo
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={pagar}>
         <h2>Factura #{f.id}</h2>
         <p className="ayuda">
@@ -695,8 +703,8 @@ function FormCobro({
           </>
         )}
 
-        <div className="tabla-wrap">
-          <table className="tabla">
+        <div className="tabla-wrap tabla-wrap--cards">
+          <table className="tabla tabla--cards">
             <thead>
               <tr>
                 <th>Producto</th>
@@ -712,22 +720,30 @@ function FormCobro({
                 if (d.anulado) {
                   return (
                     <tr key={d.id} className="fila-retirada">
-                      <td>
+                      <td data-label="Producto">
                         <span className="tachado">{nombre}</span>{' '}
                         <span className="etiqueta-retirado">Retirado</span>
                       </td>
-                      <td className="derecha tachado">{moneda.format(d.precio_unitario)}</td>
-                      <td className="derecha tachado">{d.cantidad}</td>
-                      <td className="derecha tachado">{moneda.format(d.subtotal)}</td>
-                      {editable && <td></td>}
+                      <td data-label="Precio" className="derecha tachado">
+                        {moneda.format(d.precio_unitario)}
+                      </td>
+                      <td data-label="Cant." className="derecha tachado">
+                        {d.cantidad}
+                      </td>
+                      <td data-label="Subtotal" className="derecha tachado">
+                        {moneda.format(d.subtotal)}
+                      </td>
+                      {editable && <td className="celda-accion"></td>}
                     </tr>
                   )
                 }
                 return (
                   <tr key={d.id}>
-                    <td>{nombre}</td>
-                    <td className="derecha">{moneda.format(d.precio_unitario)}</td>
-                    <td className="derecha">
+                    <td data-label="Producto">{nombre}</td>
+                    <td data-label="Precio" className="derecha">
+                      {moneda.format(d.precio_unitario)}
+                    </td>
+                    <td data-label="Cant." className="derecha">
                       {editable ? (
                         <div className="stepper">
                           <button
@@ -752,9 +768,11 @@ function FormCobro({
                         d.cantidad
                       )}
                     </td>
-                    <td className="derecha">{moneda.format(d.subtotal)}</td>
+                    <td data-label="Subtotal" className="derecha">
+                      {moneda.format(d.subtotal)}
+                    </td>
                     {editable && (
-                      <td>
+                      <td className="celda-accion">
                         <div className="acciones-fila">
                           <button
                             type="button"

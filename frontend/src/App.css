@@ -735,69 +735,104 @@ select:focus {
   border-radius: 0 0 12px 12px;
 }
 
+/* ---------- Barra superior y menú lateral (solo móvil) ---------- */
+.topbar {
+  display: none;
+}
+
+.drawer-scrim {
+  display: none;
+}
+
 /* ---------- Responsive (móvil) ---------- */
 @media (max-width: 768px) {
   .app {
     flex-direction: column;
   }
 
-  /* La barra lateral pasa a ser una barra superior compacta:
-     fila 1 = marca + sesión, fila 2 = navegación deslizable. */
-  .sidebar {
-    width: 100%;
-    height: auto;
+  /* Barra superior con el botón que abre el menú. */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--tarjeta);
+    border-bottom: 1px solid var(--borde);
     position: sticky;
     top: 0;
-    z-index: 40;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 10px;
-    padding: 10px 12px;
-    border-right: none;
-    border-bottom: 1px solid var(--borde);
+    z-index: 50;
   }
 
-  .sidebar__brand {
-    order: 1;
-    padding: 0;
+  .topbar__menu {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--texto);
+    cursor: pointer;
+    flex-shrink: 0;
   }
 
-  .sidebar__foot {
-    order: 2;
-    flex-direction: row;
+  .topbar__marca {
+    display: flex;
     align-items: center;
     gap: 8px;
-    margin-left: auto;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
   }
 
-  .sidebar__foot .boton {
-    width: auto;
-    margin: 0;
-  }
-
-  .usuario-chip__info {
-    display: none;
-  }
-
-  .nav {
-    order: 3;
-    flex: 1 0 100%;
-    flex-direction: row;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .nav__link {
+  .topbar__marca strong {
+    font-size: 15px;
     white-space: nowrap;
-    padding: 9px 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .avatar--mini {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+
+  /* El menú lateral se vuelve un panel deslizable. */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 264px;
+    max-width: 84vw;
+    height: 100svh;
+    z-index: 60;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    border-right: 1px solid var(--borde);
+    border-bottom: none;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .sidebar--abierto {
+    transform: translateX(0);
+  }
+
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+    z-index: 55;
+  }
+
+  .drawer-scrim--activo {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .contenido {
@@ -838,15 +873,127 @@ select:focus {
   .acciones {
     flex-wrap: wrap;
   }
-}
 
-@media (max-width: 480px) {
-  /* En pantallas muy angostas se libera espacio quitando el chip de perfil
-     de la barra superior (el perfil sigue en la navegación). */
-  .usuario-chip {
+  /* ---------- Tablas convertidas en tarjetas ---------- */
+  .tabla-wrap--cards {
+    border: none;
+    background: transparent;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  .tabla--cards,
+  .tabla--cards tbody,
+  .tabla--cards tr,
+  .tabla--cards td {
+    display: block;
+    width: 100%;
+  }
+
+  .tabla--cards thead {
     display: none;
   }
 
+  .tabla--cards tr {
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    background: var(--tarjeta);
+    margin-bottom: 10px;
+    padding: 3px 0;
+  }
+
+  .tabla--cards tbody tr:hover {
+    background: var(--tarjeta);
+  }
+
+  .tabla--cards td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 14px;
+    white-space: normal;
+    text-align: right;
+    border-bottom: none;
+  }
+
+  .tabla--cards td + td {
+    border-top: 1px dashed var(--borde);
+  }
+
+  .tabla--cards td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--texto-suave);
+  }
+
+  .tabla--cards td[data-label=''] {
+    justify-content: flex-start;
+  }
+
+  .tabla--cards td[data-label='']::before,
+  .tabla--cards td.celda-accion::before {
+    content: none;
+  }
+
+  .tabla--cards td.celda-accion {
+    justify-content: flex-end;
+    padding-top: 6px;
+    padding-bottom: 12px;
+  }
+
+  .tabla--cards td .acciones-fila {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .tabla--cards tfoot {
+    display: block;
+  }
+
+  .tabla--cards tfoot tr {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: none;
+    background: transparent;
+    margin: 0;
+    padding: 10px 14px;
+  }
+
+  .tabla--cards tfoot td,
+  .tabla--cards tfoot td + td {
+    display: block;
+    padding: 0;
+    border-top: none;
+  }
+
+  .tabla--cards tfoot td:empty {
+    display: none;
+  }
+
+  /* Modales grandes a pantalla completa. */
+  .modal-overlay--full {
+    padding: 0;
+  }
+
+  .modal-overlay--full .modal--ancho {
+    width: 100%;
+    max-width: 100%;
+    height: 100svh;
+    max-height: 100svh;
+    border: none;
+    border-radius: 0;
+    padding: 18px 16px;
+  }
+}
+
+@media (max-width: 480px) {
   .modal-overlay {
     padding: 12px;
   }

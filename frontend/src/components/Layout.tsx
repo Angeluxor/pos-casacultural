@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
 type Enlace = { to: string; label: string; end?: boolean }
@@ -14,6 +15,20 @@ const enlaces: Enlace[] = [
 export function Layout() {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [menuAbierto, setMenuAbierto] = useState(false)
+
+  useEffect(() => {
+    setMenuAbierto(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuAbierto(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   function salir() {
     logout()
@@ -25,7 +40,38 @@ export function Layout() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <header className="topbar">
+        <button
+          className="topbar__menu"
+          aria-label="Abrir menú"
+          aria-expanded={menuAbierto}
+          onClick={() => setMenuAbierto(true)}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M4 6h16M4 12h16M4 18h16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+        <div className="topbar__marca">
+          <span className="brand-dot" />
+          <strong>Casa Cultural</strong>
+        </div>
+        <span className="avatar avatar--mini">
+          {usuario?.nombre?.charAt(0).toUpperCase()}
+        </span>
+      </header>
+
+      <div
+        className={menuAbierto ? 'drawer-scrim drawer-scrim--activo' : 'drawer-scrim'}
+        onClick={() => setMenuAbierto(false)}
+      />
+
+      <aside className={menuAbierto ? 'sidebar sidebar--abierto' : 'sidebar'}>
         <div className="sidebar__brand">
           <span className="brand-dot" />
           <div className="brand-text">

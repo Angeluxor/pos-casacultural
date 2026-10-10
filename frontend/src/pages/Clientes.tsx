@@ -75,8 +75,8 @@ export function Clientes() {
         />
       ) : (
         <>
-          <div className="tabla-wrap">
-            <table className="tabla">
+          <div className="tabla-wrap tabla-wrap--cards">
+            <table className="tabla tabla--cards">
               <thead>
                 <tr>
                   <th>Nombre</th>
@@ -88,10 +88,10 @@ export function Clientes() {
               <tbody>
                 {clientes.map((c) => (
                   <tr key={c.id}>
-                    <td>{c.nombre}</td>
-                    <td>{c.celular || '—'}</td>
-                    <td>{c.correo || '—'}</td>
-                    <td>
+                    <td data-label="Nombre">{c.nombre}</td>
+                    <td data-label="Celular">{c.celular || '—'}</td>
+                    <td data-label="Correo">{c.correo || '—'}</td>
+                    <td className="celda-accion">
                       <div className="acciones-fila">
                         <button
                           className="boton boton--mini"

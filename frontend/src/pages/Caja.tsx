@@ -113,8 +113,8 @@ export function Caja() {
               detalle="Aún no hay entradas ni salidas en este turno."
             />
           ) : (
-            <div className="tabla-wrap">
-              <table className="tabla">
+            <div className="tabla-wrap tabla-wrap--cards">
+              <table className="tabla tabla--cards">
                 <thead>
                   <tr>
                     <th>Fecha</th>
@@ -127,8 +127,8 @@ export function Caja() {
                 <tbody>
                   {movimientos.map((m) => (
                     <tr key={m.id}>
-                      <td>{formatoFecha(m.fecha)}</td>
-                      <td>
+                      <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
+                      <td data-label="Tipo">
                         <span
                           className={
                             m.tipo === 'Salida'
@@ -141,9 +141,11 @@ export function Caja() {
                           {m.tipo}
                         </span>
                       </td>
-                      <td>{m.referencia}</td>
-                      <td>{m.forma_pago ?? '—'}</td>
-                      <td className="derecha">{moneda.format(m.monto)}</td>
+                      <td data-label="Referencia">{m.referencia}</td>
+                      <td data-label="Forma de pago">{m.forma_pago ?? '—'}</td>
+                      <td data-label="Monto" className="derecha">
+                        {moneda.format(m.monto)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -81,8 +81,8 @@ export function Usuarios() {
         />
       ) : (
         <>
-          <div className="tabla-wrap">
-            <table className="tabla">
+          <div className="tabla-wrap tabla-wrap--cards">
+            <table className="tabla tabla--cards">
               <thead>
                 <tr>
                   <th>Usuario</th>
@@ -95,15 +95,15 @@ export function Usuarios() {
               <tbody>
                 {usuarios.map((u) => (
                   <tr key={u.id}>
-                    <td>{u.username}</td>
-                    <td>{u.nombre}</td>
-                    <td>{u.rol}</td>
-                    <td>
+                    <td data-label="Usuario">{u.username}</td>
+                    <td data-label="Nombre">{u.nombre}</td>
+                    <td data-label="Rol">{u.rol}</td>
+                    <td data-label="Estado">
                       <span className={u.activo ? 'badge badge--on' : 'badge badge--off'}>
                         {u.activo ? 'Activo' : 'Inactivo'}
                       </span>
                     </td>
-                    <td>
+                    <td className="celda-accion">
                       <div className="acciones-fila">
                         <button
                           className="boton boton--mini"

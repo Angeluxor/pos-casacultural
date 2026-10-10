@@ -75,8 +75,8 @@ export function Productos() {
         />
       ) : (
         <>
-          <div className="tabla-wrap">
-            <table className="tabla">
+          <div className="tabla-wrap tabla-wrap--cards">
+            <table className="tabla tabla--cards">
               <thead>
                 <tr>
                   <th>Código</th>
@@ -89,11 +89,15 @@ export function Productos() {
               <tbody>
                 {productos.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.codigo}</td>
-                    <td>{p.nombre}</td>
-                    <td className="derecha">{moneda.format(p.precio)}</td>
-                    <td className="derecha">{p.stock}</td>
-                    <td>
+                    <td data-label="Código">{p.codigo}</td>
+                    <td data-label="Nombre">{p.nombre}</td>
+                    <td data-label="Precio" className="derecha">
+                      {moneda.format(p.precio)}
+                    </td>
+                    <td data-label="Stock" className="derecha">
+                      {p.stock}
+                    </td>
+                    <td className="celda-accion">
                       <div className="acciones-fila">
                         <button className="boton boton--mini" onClick={() => setMovProducto(p)}>
                           Stock
