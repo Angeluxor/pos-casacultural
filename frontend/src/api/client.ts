@@ -30,7 +30,16 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (res.status === 401) {
     clearToken()
-    throw new ApiError(401, 'Sesión no válida o expirada')
+    let detalle = 'Sesión no válida o expirada'
+    if (path.includes('/auth/login')) {
+      try {
+        const data = await res.json()
+        if (typeof data.detail === 'string' && data.detail) detalle = data.detail
+      } catch {
+        /* respuesta sin JSON */
+      }
+    }
+    throw new ApiError(401, detalle)
   }
   if (!res.ok) {
     let detalle = `Error ${res.status}`

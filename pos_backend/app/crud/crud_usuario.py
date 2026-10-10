@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from fastapi import HTTPException
 from typing import Optional
 from app.db.models import Usuario
@@ -7,7 +8,16 @@ from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, PerfilUpdate, Pass
 from app.core.security import get_password_hash, verify_password
 
 def get_usuario_by_username(db: Session, username: str):
-    return db.query(Usuario).filter(Usuario.username == username).first()
+    if not username:
+        return None
+    usuario = db.query(Usuario).filter(Usuario.username == username).first()
+    if usuario is None:
+        usuario = (
+            db.query(Usuario)
+            .filter(func.lower(Usuario.username) == username.strip().lower())
+            .first()
+        )
+    return usuario
 
 def authenticate(db: Session, username: str, password: str):
     usuario = get_usuario_by_username(db, username=username)
