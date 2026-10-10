@@ -1,0 +1,28 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Secretos y metadatos locales (nunca deben ir a la imagen)
+.env
+.env.local
+.neon
+
+# Control de versiones / editores
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Pruebas y temporales
+test_*.py
+scripts/test_write.txt
+
+# Documentación
+*.md

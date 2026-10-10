@@ -1,0 +1,48 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.db.models import Usuario
+from app.crud import crud_usuario
+from app.core.security import create_access_token
+from app.api.deps import get_current_active_user
+from app.schemas.usuario import UsuarioResponse, PerfilUpdate, PasswordUpdate
+
+router = APIRouter()
+
+
+@router.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    usuario = crud_usuario.authenticate(db, username=form_data.username, password=form_data.password)
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = create_access_token(subject=usuario.username)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UsuarioResponse)
+def leer_usuario_actual(current_user: Usuario = Depends(get_current_active_user)):
+    return current_user
+
+
+@router.put("/me", response_model=UsuarioResponse)
+def actualizar_perfil(
+    datos: PerfilUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    return crud_usuario.actualizar_perfil(db, current_user, datos)
+
+
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+def cambiar_password(
+    datos: PasswordUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    crud_usuario.cambiar_password(db, current_user, datos)

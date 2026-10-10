@@ -1,0 +1,25 @@
+# --- Python ---
+venv/
+ven/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Secretos / datos locales (nunca se versionan) ---
+pos_backend/.env
+pos_backend/.env.local
+pos_backend/.neon
+
+# --- Node ---
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# --- Editores / SO ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

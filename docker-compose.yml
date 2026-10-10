@@ -1,0 +1,56 @@
+# Entorno local COMPLETO para probar el MVP del POS Casa Cultural.
+#
+#   docker compose up --build      ->  frontend en http://localhost:5173
+#   docker compose down            ->  detiene los servicios (los datos se conservan)
+#   docker compose down -v         ->  detiene y BORRA los datos de Postgres
+#
+# Los valores por defecto funcionan sin configurar nada. Para cambiarlos,
+# copia ".env.example" a ".env" en la raíz de este proyecto y edítalo.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pos}
+      POSTGRES_DB: ${POSTGRES_DB:-pos_casacultural}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pos} -d ${POSTGRES_DB:-pos_casacultural}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./pos_backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pos}:${POSTGRES_PASSWORD:-pos}@db:5432/${POSTGRES_DB:-pos_casacultural}
+      SECRET_KEY: ${SECRET_KEY:-local-dev-secret-change-me}
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_NOMBRE: ${ADMIN_NOMBRE:-Administrador}
+      PORT: "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Debe ser accesible DESDE EL NAVEGADOR (no desde dentro de la red Docker).
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:

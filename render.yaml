@@ -1,0 +1,31 @@
+# Render Blueprint para el backend del POS Casa Cultural.
+# Crea el servicio con "New +" -> "Blueprint" apuntando a este repositorio.
+# Las variables marcadas con sync: false se piden al desplegar (no se versionan).
+services:
+  - type: web
+    name: pos-casacultural-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./pos_backend/Dockerfile
+    dockerContext: ./pos_backend
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Cadena poolada de Neon (obligatoria)
+      - key: DATABASE_URL
+        sync: false
+      # Render genera un valor aleatorio seguro
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "480"
+      # Dominio(s) del frontend, separados por coma (ej: https://pos-casacultural.vercel.app)
+      - key: CORS_ORIGINS
+        sync: false
+      # Semilla del primer administrador
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NOMBRE
+        value: Administrador

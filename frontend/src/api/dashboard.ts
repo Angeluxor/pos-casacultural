@@ -1,0 +1,45 @@
+import { apiFetch } from './client'
+
+export type VentaDia = {
+  fecha: string
+  total: number
+  cantidad: number
+}
+
+export type ProductoBajoStock = {
+  id: number
+  codigo: string
+  nombre: string
+  stock: number
+}
+
+export type CajaResumen = {
+  abierta: boolean
+  turno_id: number | null
+  saldo_inicial: number
+  entradas: number
+  salidas: number
+  esperado: number
+}
+
+export type DashboardKpis = {
+  ventas_hoy_total: number
+  ventas_hoy_cantidad: number
+  ventas_7d_total: number
+  cartera_total: number
+  facturas_pendientes: number
+}
+
+export type DashboardResumen = {
+  kpis: DashboardKpis
+  ventas_ultimos_7_dias: VentaDia[]
+  productos_bajo_stock: ProductoBajoStock[]
+  facturas_por_estado: Record<string, number>
+  caja: CajaResumen
+  total_clientes: number
+  total_productos: number
+}
+
+export function obtenerDashboard(): Promise<DashboardResumen> {
+  return apiFetch<DashboardResumen>('/api/dashboard/')
+}

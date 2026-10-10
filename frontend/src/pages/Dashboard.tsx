@@ -1,0 +1,188 @@
+import { useCallback, useEffect, useState } from 'react'
+import { obtenerDashboard, type DashboardResumen } from '../api/dashboard'
+import { moneda } from '../lib/formato'
+import { Vacio } from '../components/Vacio'
+import { useAuth } from '../auth/useAuth'
+
+const ORDEN_ESTADOS = ['Pendiente', 'Pagado Parcial', 'Pagada', 'Anulada']
+const CLASE_ESTADO: Record<string, string> = {
+  Pendiente: 'badge badge--warn',
+  'Pagado Parcial': 'badge badge--info',
+  Pagada: 'badge badge--on',
+  Anulada: 'badge badge--off',
+}
+
+function etiquetaDia(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString('es-CO', {
+    weekday: 'short',
+    day: 'numeric',
+  })
+}
+
+export function Dashboard() {
+  const { usuario } = useAuth()
+  const [datos, setDatos] = useState<DashboardResumen | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState('')
+
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    try {
+      setDatos(await obtenerDashboard())
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar el dashboard')
+    } finally {
+      setCargando(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void cargar()
+  }, [cargar])
+
+  const maxDia = datos ? Math.max(...datos.ventas_ultimos_7_dias.map((d) => d.total), 1) : 1
+
+  return (
+    <div className="pagina">
+      <header className="pagina__head">
+        <div>
+          <h1>Hola, {usuario?.nombre}</h1>
+          <p className="ayuda">Resumen del punto de venta de Casa Cultural.</p>
+        </div>
+        <button className="boton boton--secundario" onClick={() => void cargar()}>
+          Actualizar
+        </button>
+      </header>
+
+      {error && <p className="error">{error}</p>}
+
+      {cargando ? (
+        <p className="ayuda">Cargando…</p>
+      ) : !datos ? (
+        <Vacio titulo="Sin datos" detalle="No se pudo obtener el resumen." />
+      ) : (
+        <>
+          <div className="tarjetas">
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Ventas de hoy</span>
+              <strong>{moneda.format(datos.kpis.ventas_hoy_total)}</strong>
+              <small>
+                {datos.kpis.ventas_hoy_cantidad} factura
+                {datos.kpis.ventas_hoy_cantidad === 1 ? '' : 's'}
+              </small>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Últimos 7 días</span>
+              <strong>{moneda.format(datos.kpis.ventas_7d_total)}</strong>
+              <small>ventas acumuladas</small>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Cartera por cobrar</span>
+              <strong>{moneda.format(datos.kpis.cartera_total)}</strong>
+              <small>
+                {datos.kpis.facturas_pendientes} factura
+                {datos.kpis.facturas_pendientes === 1 ? '' : 's'} pendiente
+                {datos.kpis.facturas_pendientes === 1 ? '' : 's'}
+              </small>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Caja</span>
+              {datos.caja.abierta ? (
+                <>
+                  <strong>{moneda.format(datos.caja.esperado)}</strong>
+                  <small>Turno #{datos.caja.turno_id} · esperado en caja</small>
+                </>
+              ) : (
+                <>
+                  <strong>Cerrada</strong>
+                  <small>sin turno abierto</small>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="dash-grid">
+            <div className="dash-col">
+              <section className="panel">
+                <h3>Ventas últimos 7 días</h3>
+                <div className="barras">
+                  {datos.ventas_ultimos_7_dias.map((d) => (
+                    <div
+                      className="barra-col"
+                      key={d.fecha}
+                      title={`${etiquetaDia(d.fecha)}: ${moneda.format(d.total)} (${d.cantidad})`}
+                    >
+                      <span className="barra-valor">
+                        {d.total > 0 ? moneda.format(d.total) : ''}
+                      </span>
+                      <div
+                        className="barra-fill"
+                        style={{ height: `${Math.max((d.total / maxDia) * 100, 2)}%` }}
+                      />
+                      <span className="barra-label">{etiquetaDia(d.fecha)}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <h3>Facturas por estado</h3>
+                <ul className="lista-simple">
+                  {ORDEN_ESTADOS.map((estado) => (
+                    <li key={estado}>
+                      <span className={CLASE_ESTADO[estado] ?? 'badge'}>{estado}</span>
+                      <strong>{datos.facturas_por_estado[estado] ?? 0}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+
+            <div className="dash-col">
+              <section className="panel">
+                <h3>Productos con bajo stock</h3>
+                {datos.productos_bajo_stock.length === 0 ? (
+                  <p className="ayuda">Todo el catálogo con stock suficiente.</p>
+                ) : (
+                  <ul className="lista-simple">
+                    {datos.productos_bajo_stock.map((p) => (
+                      <li key={p.id}>
+                        <span>
+                          {p.nombre}
+                          <br />
+                          <small className="ayuda">{p.codigo}</small>
+                        </span>
+                        <span className={p.stock === 0 ? 'badge badge--off' : 'badge badge--warn'}>
+                          {p.stock}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className="panel">
+                <h3>Resumen</h3>
+                <ul className="lista-simple">
+                  <li>
+                    <span className="ayuda">Clientes</span>
+                    <strong>{datos.total_clientes}</strong>
+                  </li>
+                  <li>
+                    <span className="ayuda">Productos</span>
+                    <strong>{datos.total_productos}</strong>
+                  </li>
+                  <li>
+                    <span className="ayuda">Cartera</span>
+                    <strong>{moneda.format(datos.kpis.cartera_total)}</strong>
+                  </li>
+                </ul>
+              </section>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
