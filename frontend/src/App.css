@@ -63,6 +63,18 @@ select {
   font-size: 15px;
 }
 
+/* El popup nativo del <select> no hereda el fondo transparente: Chrome lo pinta
+   blanco y, en modo oscuro, las opciones quedan en texto claro sobre blanco.
+   Por eso el <select> y sus <option> necesitan un fondo y color explícitos. */
+select {
+  background-color: var(--tarjeta);
+}
+
+select option {
+  background-color: var(--tarjeta);
+  color: var(--texto);
+}
+
 input:focus,
 select:focus {
   outline: 2px solid var(--primario);
