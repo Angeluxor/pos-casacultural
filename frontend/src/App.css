@@ -25,11 +25,13 @@
 }
 
 .marca h1 {
-  font-size: 22px;
+  font-size: 30px;
   margin: 0;
+  letter-spacing: 0.03em;
 }
 
 .estado {
+  font-family: var(--fuente-editorial);
   font-size: 12px;
   color: var(--texto-suave);
 }
@@ -192,6 +194,7 @@ select:focus {
   height: 12px;
   border-radius: 50%;
   background: var(--primario);
+  border: 2px solid var(--acento);
 }
 
 .brand-text {
@@ -201,6 +204,7 @@ select:focus {
 }
 
 .brand-text small {
+  font-family: var(--fuente-editorial);
   color: var(--texto-suave);
   font-size: 11px;
 }
@@ -217,8 +221,10 @@ select:focus {
   border-radius: 10px;
   color: var(--texto-suave);
   text-decoration: none;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .nav__link:hover {
@@ -284,8 +290,9 @@ select:focus {
 }
 
 .pagina__head h1 {
-  font-size: 26px;
+  font-size: 32px;
   margin: 0 0 4px;
+  letter-spacing: 0.025em;
 }
 
 .tarjetas {
@@ -472,12 +479,12 @@ select:focus {
 }
 
 .badge--on {
-  background: rgba(22, 163, 74, 0.15);
+  background: rgba(79, 122, 52, 0.16);
   color: var(--ok);
 }
 
 .badge--off {
-  background: rgba(220, 38, 38, 0.15);
+  background: rgba(164, 30, 34, 0.14);
   color: var(--error);
 }
 
@@ -492,17 +499,17 @@ select:focus {
 }
 
 .badge--info {
-  background: rgba(37, 99, 235, 0.15);
+  background: rgba(137, 35, 37, 0.12);
   color: var(--primario);
 }
 
 .badge--warn {
-  background: rgba(217, 119, 6, 0.15);
-  color: #d97706;
+  background: rgba(176, 125, 31, 0.16);
+  color: var(--advertencia);
 }
 
 .aviso {
-  color: #d97706;
+  color: var(--advertencia);
   font-size: 14px;
   margin: 0;
 }
@@ -543,6 +550,29 @@ select:focus {
   font-size: 18px;
 }
 
+.diferencia {
+  font-weight: 600;
+}
+
+.diferencia--ok {
+  color: var(--ok);
+}
+
+.diferencia--bad {
+  color: var(--error);
+}
+
+.detalle-turno {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--borde);
+}
+
+.detalle-turno h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
 .fila-campos {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -557,6 +587,10 @@ select:focus {
 
 .buscador-producto {
   position: relative;
+}
+
+.buscador-producto input {
+  width: 100%;
 }
 
 .sugerencias {
@@ -609,6 +643,63 @@ select:focus {
   border: 1px solid var(--borde);
   border-radius: 10px;
   font-size: 15px;
+}
+
+.seleccion-chip--defecto {
+  background: var(--bg);
+  border-style: dashed;
+}
+
+.cliente-defecto {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  border: 1px solid var(--borde);
+  border-radius: 50%;
+  color: var(--texto-suave);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.info-tip__globito {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--tarjeta);
+  color: var(--texto);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.info-tip:hover .info-tip__globito,
+.info-tip:focus-within .info-tip__globito {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ---------- Dashboard ---------- */
@@ -689,6 +780,16 @@ select:focus {
   font-size: 14px;
 }
 
+.lista-simple--scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.enlace-ver-mas {
+  margin-top: 12px;
+}
+
 @media (max-width: 900px) {
   .dash-grid {
     grid-template-columns: 1fr;
@@ -711,7 +812,21 @@ select:focus {
 .stepper {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.stepper__btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  justify-content: center;
+}
+
+.stepper__input {
+  width: 60px;
+  text-align: center;
 }
 
 .stepper span {
@@ -898,6 +1013,24 @@ select:focus {
 
   .acciones {
     flex-wrap: wrap;
+  }
+
+  /* Controles de cantidad con blancos táctiles amplios. */
+  .stepper {
+    gap: 8px;
+  }
+
+  .stepper__btn {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .stepper__input,
+  .campo-pagina,
+  .input-mini {
+    min-height: 44px;
+    font-size: 16px;
   }
 
   /* ---------- Tablas convertidas en tarjetas ---------- */

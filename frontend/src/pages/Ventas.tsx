@@ -14,7 +14,9 @@ import { listarProductos, type Producto } from '../api/productos'
 import { listarClientes, type Cliente } from '../api/clientes'
 import type { FormaPago } from '../api/types'
 import { Paginacion } from '../components/Paginacion'
+import { Stepper } from '../components/Stepper'
 import { formatoFecha, moneda } from '../lib/formato'
+import { confirmarCierre } from '../lib/modal'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
@@ -78,6 +80,7 @@ export function Ventas() {
 
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
   const [cobrar, setCobrar] = useState<Factura | null>(null)
+  const [modoFactura, setModoFactura] = useState<'ver' | 'pagar'>('ver')
 
   const cargarCatalogo = useCallback(async () => {
     setCargandoCatalogo(true)
@@ -212,12 +215,24 @@ export function Ventas() {
                     </td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
-                        <button className="boton boton--mini" onClick={() => setCobrar(f)}>
+                        <button
+                          className="boton boton--mini"
+                          onClick={() => {
+                            setModoFactura('ver')
+                            setCobrar(f)
+                          }}
+                        >
                           Ver
                         </button>
                         {f.saldo > 0 && f.estado !== 'Anulada' && (
-                          <button className="boton boton--mini" onClick={() => setCobrar(f)}>
-                            Cobrar
+                          <button
+                            className="boton boton--mini"
+                            onClick={() => {
+                              setModoFactura('pagar')
+                              setCobrar(f)
+                            }}
+                          >
+                            Pagar
                           </button>
                         )}
                       </div>
@@ -256,6 +271,7 @@ export function Ventas() {
           factura={cobrar}
           productos={productos}
           esAdmin={esAdmin}
+          modo={modoFactura}
           onCerrar={() => {
             setCobrar(null)
             recargar()
@@ -288,6 +304,7 @@ function FormVenta({
 }) {
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [buscarCliente, setBuscarCliente] = useState('')
+  const [eligiendoCliente, setEligiendoCliente] = useState(false)
   const [items, setItems] = useState<ItemVenta[]>([])
   const [buscarProducto, setBuscarProducto] = useState('')
   const [cobrarAhora, setCobrarAhora] = useState(false)
@@ -386,7 +403,7 @@ function FormVenta({
   }
 
   return (
-    <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
+    <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Nueva venta</h2>
         {error && <p className="error">{error}</p>}
@@ -399,15 +416,23 @@ function FormVenta({
               {cliente.nombre}
               {contactoSecundario(cliente) ? ` — ${contactoSecundario(cliente)}` : ''}
             </span>
-            <button type="button" className="boton boton--mini" onClick={() => setCliente(null)}>
+            <button
+              type="button"
+              className="boton boton--mini"
+              onClick={() => {
+                setCliente(null)
+                setEligiendoCliente(false)
+              }}
+            >
               Quitar
             </button>
           </div>
-        ) : (
+        ) : eligiendoCliente ? (
           <div className="buscador-producto">
             <input
               id="venta-cliente"
-              placeholder="Buscar cliente por nombre, celular o correo… (vacío = Consumidor final)"
+              autoFocus
+              placeholder="Buscar cliente por nombre, celular o correo…"
               value={buscarCliente}
               onChange={(e) => setBuscarCliente(e.target.value)}
             />
@@ -420,6 +445,7 @@ function FormVenta({
                       onClick={() => {
                         setCliente(c)
                         setBuscarCliente('')
+                        setEligiendoCliente(false)
                       }}
                     >
                       <span>{c.nombre}</span>
@@ -432,6 +458,41 @@ function FormVenta({
             {buscarCliente.trim() && resultadosClientes.length === 0 && (
               <p className="ayuda">Sin coincidencias para «{buscarCliente.trim()}».</p>
             )}
+            <button
+              type="button"
+              className="boton boton--secundario boton--mini enlace-ver-mas"
+              onClick={() => {
+                setBuscarCliente('')
+                setEligiendoCliente(false)
+              }}
+            >
+              Usar «Consumidor final»
+            </button>
+          </div>
+        ) : (
+          <div className="seleccion-chip seleccion-chip--defecto">
+            <span className="cliente-defecto">
+              Consumidor final
+              <span
+                className="info-tip"
+                tabIndex={0}
+                role="img"
+                aria-label="Sugerencia sobre clientes"
+              >
+                i
+                <span className="info-tip__globito">
+                  Se recomienda registrar y seleccionar al cliente siempre que sea posible, para
+                  llevar su historial de compras.
+                </span>
+              </span>
+            </span>
+            <button
+              type="button"
+              className="boton boton--mini"
+              onClick={() => setEligiendoCliente(true)}
+            >
+              Elegir cliente
+            </button>
           </div>
         )}
 
@@ -482,12 +543,11 @@ function FormVenta({
                     {moneda.format(i.producto.precio)}
                   </td>
                   <td data-label="Cant." className="derecha">
-                    <input
-                      className="input-mini"
-                      type="number"
-                      min={1}
-                      value={i.cantidad}
-                      onChange={(e) => cambiarCantidad(i.producto.id, Number(e.target.value))}
+                    <Stepper
+                      valor={i.cantidad}
+                      disabled={guardando}
+                      etiqueta={i.producto.nombre}
+                      onCambiar={(n) => cambiarCantidad(i.producto.id, n)}
                     />
                   </td>
                   <td data-label="Subtotal" className="derecha">
@@ -582,12 +642,14 @@ function FormCobro({
   factura,
   productos,
   esAdmin,
+  modo,
   onCerrar,
   onGuardado,
 }: {
   factura: Factura
   productos: Producto[]
   esAdmin: boolean
+  modo: 'ver' | 'pagar'
   onCerrar: () => void
   onGuardado: () => void
 }) {
@@ -604,7 +666,10 @@ function FormCobro({
   const [motivoOtro, setMotivoOtro] = useState('')
 
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
-  const editable = f.estado !== 'Anulada'
+  const esPago = modo === 'pagar'
+  const facturaAbierta = f.estado !== 'Anulada'
+  const editable = facturaAbierta && modo === 'ver'
+  const puedePagar = facturaAbierta && modo === 'pagar' && f.saldo > 0
   const activos = f.detalles.filter((d) => !d.anulado)
   const unaSolaLinea = activos.length <= 1
 
@@ -660,8 +725,7 @@ function FormCobro({
     }
   }
 
-  async function pagar(e: FormEvent) {
-    e.preventDefault()
+  async function pagar() {
     setError('')
     const valor = Number(monto)
     if (!valor || valor <= 0 || valor > f.saldo) {
@@ -677,6 +741,12 @@ function FormCobro({
     } finally {
       setGuardando(false)
     }
+  }
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!esPago) return
+    void pagar()
   }
 
   async function confirmarAnular() {
@@ -696,9 +766,9 @@ function FormCobro({
   const pagado = f.total - f.saldo
 
   return (
-    <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
-      <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={pagar}>
-        <h2>Factura #{f.id}</h2>
+    <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
+      <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
+        <h2>{esPago ? `Registrar pago · Factura #${f.id}` : `Factura #${f.id}`}</h2>
         <p className="ayuda">
           {formatoFecha(f.fecha)} · Total {moneda.format(f.total)} · Pagado {moneda.format(pagado)}{' '}
           · Saldo {moneda.format(f.saldo)}{' '}
@@ -790,25 +860,12 @@ function FormCobro({
                     </td>
                     <td data-label="Cant." className="derecha">
                       {editable ? (
-                        <div className="stepper">
-                          <button
-                            type="button"
-                            className="boton boton--mini"
-                            disabled={ocupado || d.cantidad <= 1}
-                            onClick={() => void cambiarCantidad(d.id, d.cantidad - 1)}
-                          >
-                            −
-                          </button>
-                          <span>{d.cantidad}</span>
-                          <button
-                            type="button"
-                            className="boton boton--mini"
-                            disabled={ocupado}
-                            onClick={() => void cambiarCantidad(d.id, d.cantidad + 1)}
-                          >
-                            +
-                          </button>
-                        </div>
+                        <Stepper
+                          valor={d.cantidad}
+                          disabled={ocupado}
+                          etiqueta={nombre}
+                          onCambiar={(n) => void cambiarCantidad(d.id, n)}
+                        />
                       ) : (
                         d.cantidad
                       )}
@@ -849,7 +906,7 @@ function FormCobro({
           </table>
         </div>
 
-        {editable && f.saldo > 0 ? (
+        {puedePagar ? (
           <>
             <div className="fila-campos">
               <label>
@@ -877,16 +934,6 @@ function FormCobro({
               </label>
             </div>
             <div className="acciones">
-              {esAdmin && (
-                <button
-                  type="button"
-                  className="boton boton--danger"
-                  onClick={() => setMostrandoAnular(true)}
-                  disabled={anulando || ocupado}
-                >
-                  Anular factura
-                </button>
-              )}
               <span className="espaciador" />
               <button type="button" className="boton boton--secundario" onClick={onCerrar}>
                 Cerrar
@@ -898,11 +945,17 @@ function FormCobro({
           </>
         ) : (
           <>
-            <p className="ayuda">
-              {f.estado === 'Anulada' ? 'Factura anulada.' : 'Esta factura ya está paga.'}
-            </p>
+            {esPago ? (
+              <p className="ayuda">
+                {f.estado === 'Anulada'
+                  ? 'La factura está anulada.'
+                  : 'Esta factura ya está paga.'}
+              </p>
+            ) : (
+              <p className="ayuda">Los cambios en los productos se guardan al instante.</p>
+            )}
             <div className="acciones">
-              {esAdmin && f.estado !== 'Anulada' && (
+              {editable && esAdmin && (
                 <button
                   type="button"
                   className="boton boton--danger"

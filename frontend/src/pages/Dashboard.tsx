@@ -24,6 +24,7 @@ export function Dashboard() {
   const [datos, setDatos] = useState<DashboardResumen | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const [verTodoBajoStock, setVerTodoBajoStock] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -48,7 +49,7 @@ export function Dashboard() {
       <header className="pagina__head">
         <div>
           <h1>Hola, {usuario?.nombre}</h1>
-          <p className="ayuda">Resumen del punto de venta de Casa Cultural.</p>
+          <p className="ayuda">Resumen del punto de venta de Casi Obsceno.</p>
         </div>
         <button className="boton boton--secundario" onClick={() => void cargar()}>
           Actualizar
@@ -145,20 +146,44 @@ export function Dashboard() {
                 {datos.productos_bajo_stock.length === 0 ? (
                   <p className="ayuda">Todo el catálogo con stock suficiente.</p>
                 ) : (
-                  <ul className="lista-simple">
-                    {datos.productos_bajo_stock.map((p) => (
-                      <li key={p.id}>
-                        <span>
-                          {p.nombre}
-                          <br />
-                          <small className="ayuda">{p.codigo}</small>
-                        </span>
-                        <span className={p.stock === 0 ? 'badge badge--off' : 'badge badge--warn'}>
-                          {p.stock}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul
+                      className={
+                        verTodoBajoStock
+                          ? 'lista-simple lista-simple--scroll'
+                          : 'lista-simple'
+                      }
+                    >
+                      {(verTodoBajoStock
+                        ? datos.productos_bajo_stock
+                        : datos.productos_bajo_stock.slice(0, 6)
+                      ).map((p) => (
+                        <li key={p.id}>
+                          <span>
+                            {p.nombre}
+                            <br />
+                            <small className="ayuda">{p.codigo}</small>
+                          </span>
+                          <span
+                            className={p.stock === 0 ? 'badge badge--off' : 'badge badge--warn'}
+                          >
+                            {p.stock}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {datos.productos_bajo_stock.length > 6 && (
+                      <button
+                        type="button"
+                        className="boton boton--secundario boton--mini enlace-ver-mas"
+                        onClick={() => setVerTodoBajoStock((v) => !v)}
+                      >
+                        {verTodoBajoStock
+                          ? 'Ver menos'
+                          : `Ver todos (${datos.productos_bajo_stock.length})`}
+                      </button>
+                    )}
+                  </>
                 )}
               </section>
 

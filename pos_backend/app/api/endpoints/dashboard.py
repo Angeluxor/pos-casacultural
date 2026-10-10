@@ -98,7 +98,6 @@ def resumen_dashboard(
         db.query(Producto)
         .filter(Producto.stock <= UMBRAL_BAJO_STOCK)
         .order_by(Producto.stock.asc(), Producto.nombre.asc())
-        .limit(10)
         .all()
     )
     productos_bajo_stock = [

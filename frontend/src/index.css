@@ -1,28 +1,36 @@
 :root {
-  --bg: #f4f5f7;
-  --tarjeta: #ffffff;
-  --texto: #1f2430;
-  --texto-suave: #6b7280;
-  --borde: #e5e7eb;
-  --primario: #6d28d9;
-  --primario-hover: #5b21b6;
-  --error: #dc2626;
-  --ok: #16a34a;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --bg: #f5ecdb;
+  --tarjeta: #fffaf1;
+  --texto: #3a1518;
+  --texto-suave: #8a6247;
+  --borde: #e6d4b6;
+  --primario: #892325;
+  --primario-hover: #6d1b1d;
+  --acento: #dabf89;
+  --acento-suave: #efe0c2;
+  --error: #a41e22;
+  --ok: #4f7a34;
+  --advertencia: #b07d1f;
+  --fuente-titulos: 'Bebas Neue', 'Oswald', Impact, sans-serif;
+  --fuente-editorial: 'Special Elite', 'Courier New', monospace;
+  font-family: 'Oswald', system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16171d;
-    --tarjeta: #1f2028;
-    --texto: #f3f4f6;
-    --texto-suave: #9ca3af;
-    --borde: #2e303a;
-    --primario: #a78bfa;
-    --primario-hover: #c4b5fd;
-    --error: #f87171;
-    --ok: #4ade80;
+    --bg: #1b1210;
+    --tarjeta: #241715;
+    --texto: #f2e3c8;
+    --texto-suave: #b99873;
+    --borde: #4a2f28;
+    --primario: #a12b2d;
+    --primario-hover: #c04043;
+    --acento: #dabf89;
+    --acento-suave: #3a2620;
+    --error: #e0625f;
+    --ok: #9ccc65;
+    --advertencia: #e0a53c;
   }
 }
 
@@ -41,7 +49,18 @@ body {
 }
 
 h1,
-h2 {
+h2,
+h3 {
+  font-family: var(--fuente-titulos);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--texto);
-  font-weight: 600;
+}
+
+input,
+select,
+button,
+textarea {
+  font-family: inherit;
 }

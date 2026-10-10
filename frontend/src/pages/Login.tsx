@@ -32,7 +32,7 @@ export function Login() {
     <div className="pantalla">
       <div className="tarjeta">
         <header className="marca">
-          <h1>POS Casa Cultural</h1>
+          <h1>Casi Obsceno</h1>
           <span className="estado">Acceso al sistema</span>
         </header>
 

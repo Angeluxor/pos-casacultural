@@ -1,8 +1,10 @@
+from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from fastapi import HTTPException
 from app.db.models import TurnoCaja, RegistroCaja, TipoMovimientoCaja
-from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate
-from app.core.timezone import get_colombia_time
+from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate, TurnoCajaHistorial
+from app.core.timezone import get_colombia_time, BOGOTA_TZ
 
 def obtener_caja_abierta(db: Session):
     return db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
@@ -82,3 +84,78 @@ def obtener_movimientos(db: Session, turno_id: int):
         .order_by(RegistroCaja.fecha.asc(), RegistroCaja.id.asc())
         .all()
     )
+
+
+def obtener_turnos(
+    db: Session,
+    skip: int = 0,
+    limit: int = 30,
+    desde: str | None = None,
+    hasta: str | None = None,
+    incluir_abierta: bool = False,
+):
+    query = db.query(TurnoCaja)
+    if not incluir_abierta:
+        query = query.filter(TurnoCaja.abierta == False)
+    if desde:
+        try:
+            d = date.fromisoformat(desde)
+            query = query.filter(
+                TurnoCaja.fecha_apertura >= datetime.combine(d, time.min, tzinfo=BOGOTA_TZ)
+            )
+        except ValueError:
+            pass
+    if hasta:
+        try:
+            h = date.fromisoformat(hasta)
+            query = query.filter(
+                TurnoCaja.fecha_apertura
+                < datetime.combine(h + timedelta(days=1), time.min, tzinfo=BOGOTA_TZ)
+            )
+        except ValueError:
+            pass
+
+    total = query.count()
+    turnos = query.order_by(TurnoCaja.id.desc()).offset(skip).limit(limit).all()
+
+    resultado: list[TurnoCajaHistorial] = []
+    for t in turnos:
+        entradas = float(
+            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
+            .filter(
+                RegistroCaja.turno_caja_id == t.id,
+                RegistroCaja.tipo == TipoMovimientoCaja.ENTRADA,
+            )
+            .scalar()
+        )
+        salidas = float(
+            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
+            .filter(
+                RegistroCaja.turno_caja_id == t.id,
+                RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
+            )
+            .scalar()
+        )
+        esperado = t.saldo_inicial + entradas - salidas
+        diferencia = (
+            (t.saldo_final_real - esperado) if t.saldo_final_real is not None else None
+        )
+        resultado.append(
+            TurnoCajaHistorial(
+                id=t.id,
+                usuario_apertura_id=t.usuario_apertura_id,
+                usuario_cierre_id=t.usuario_cierre_id,
+                fecha_apertura=t.fecha_apertura,
+                fecha_cierre=t.fecha_cierre,
+                saldo_inicial=t.saldo_inicial,
+                saldo_final_real=t.saldo_final_real,
+                abierta=t.abierta,
+                usuario_apertura_nombre=getattr(t.usuario_apertura, "nombre", None),
+                usuario_cierre_nombre=getattr(t.usuario_cierre, "nombre", None),
+                entradas=entradas,
+                salidas=salidas,
+                esperado=esperado,
+                diferencia=diferencia,
+            )
+        )
+    return total, resultado

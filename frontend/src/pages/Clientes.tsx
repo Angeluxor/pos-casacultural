@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
 import { Vacio } from '../components/Vacio'
+import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
 
 export function Clientes() {
@@ -157,9 +158,14 @@ function FormCliente({
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const correoLimpio = correo.trim()
+    if (correoLimpio && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correoLimpio)) {
+      setError('El correo no tiene un formato válido.')
+      return
+    }
     setGuardando(true)
     try {
-      const datos = { nombre, celular: celular || null, correo: correo || null }
+      const datos = { nombre, celular: celular || null, correo: correoLimpio || null }
       if (cliente) {
         await actualizarCliente(cliente.id, datos)
       } else {
@@ -174,7 +180,7 @@ function FormCliente({
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>{esEdicion ? 'Editar cliente' : 'Nuevo cliente'}</h2>
         {error && <p className="error">{error}</p>}
@@ -186,8 +192,10 @@ function FormCliente({
           Celular
           <input
             value={celular}
-            onChange={(e) => setCelular(e.target.value)}
-            inputMode="tel"
+            onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))}
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={15}
             placeholder="Opcional"
           />
         </label>

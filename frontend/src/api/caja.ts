@@ -1,5 +1,5 @@
 import { apiFetch, apiJson, ApiError } from './client'
-import type { FormaPago } from './types'
+import type { FormaPago, Pagina } from './types'
 
 export type TipoMovimientoCaja = 'Entrada' | 'Salida' | 'Apertura' | 'Cierre'
 
@@ -12,6 +12,15 @@ export type TurnoCaja = {
   saldo_inicial: number
   saldo_final_real: number | null
   abierta: boolean
+}
+
+export type TurnoCajaHistorial = TurnoCaja & {
+  usuario_apertura_nombre: string | null
+  usuario_cierre_nombre: string | null
+  entradas: number
+  salidas: number
+  esperado: number
+  diferencia: number | null
 }
 
 export type RegistroCaja = {
@@ -59,4 +68,18 @@ export function registrarMovimiento(data: MovimientoCajaCreate): Promise<Registr
 
 export function obtenerMovimientos(turnoId: number): Promise<RegistroCaja[]> {
   return apiFetch<RegistroCaja[]>(`/api/caja/${turnoId}/movimientos`)
+}
+
+export function listarTurnos(params: {
+  skip: number
+  limit: number
+  desde?: string
+  hasta?: string
+}): Promise<Pagina<TurnoCajaHistorial>> {
+  const q = new URLSearchParams()
+  q.set('skip', String(params.skip))
+  q.set('limit', String(params.limit))
+  if (params.desde) q.set('desde', params.desde)
+  if (params.hasta) q.set('hasta', params.hasta)
+  return apiFetch<Pagina<TurnoCajaHistorial>>(`/api/caja/turnos?${q.toString()}`)
 }

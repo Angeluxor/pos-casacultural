@@ -26,6 +26,15 @@ def registrar_kardex(db: Session, producto_id: int, kardex_data: KardexCreate, u
 
     cantidad_movimiento = abs(kardex_data.cantidad)
 
+    if kardex_data.tipo_movimiento == TipoMovimientoInventario.AJUSTE:
+        if kardex_data.cantidad == 0:
+            raise HTTPException(status_code=400, detail="El ajuste no puede ser 0.")
+    elif kardex_data.cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad debe ser mayor a 0. Usa el tipo Ajuste para restar stock.",
+        )
+
     # Actualizar stock del producto
     if kardex_data.tipo_movimiento in [TipoMovimientoInventario.ENTRADA_COMPRA, TipoMovimientoInventario.DEVOLUCION]:
         producto.stock += cantidad_movimiento

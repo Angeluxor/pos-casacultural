@@ -1,14 +1,18 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   actualizarProducto,
   crearProducto,
+  historialKardex,
   paginaProductos,
   registrarMovimiento,
+  type KardexMovimiento,
   type Producto,
   type TipoMovimientoInventario,
 } from '../api/productos'
 import { Paginacion } from '../components/Paginacion'
 import { Vacio } from '../components/Vacio'
+import { confirmarCierre } from '../lib/modal'
+import { formatoFecha } from '../lib/formato'
 import { usePaginacion } from '../lib/usePaginacion'
 
 const TIPOS_MOVIMIENTO: TipoMovimientoInventario[] = [
@@ -35,6 +39,7 @@ export function Productos() {
     producto: null,
   })
   const [movProducto, setMovProducto] = useState<Producto | null>(null)
+  const [kardexProducto, setKardexProducto] = useState<Producto | null>(null)
 
   return (
     <div className="pagina">
@@ -102,6 +107,9 @@ export function Productos() {
                         <button className="boton boton--mini" onClick={() => setMovProducto(p)}>
                           Stock
                         </button>
+                        <button className="boton boton--mini" onClick={() => setKardexProducto(p)}>
+                          Historial
+                        </button>
                         <button
                           className="boton boton--mini"
                           onClick={() => setFormProducto({ abierto: true, producto: p })}
@@ -145,6 +153,10 @@ export function Productos() {
             recargar()
           }}
         />
+      )}
+
+      {kardexProducto && (
+        <FormKardex producto={kardexProducto} onCerrar={() => setKardexProducto(null)} />
       )}
     </div>
   )
@@ -191,7 +203,7 @@ function FormProducto({
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>{esEdicion ? 'Editar producto' : 'Nuevo producto'}</h2>
         {error && <p className="error">{error}</p>}
@@ -260,11 +272,25 @@ function FormMovimiento({
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const cant = Number(cantidad)
+    if (!Number.isInteger(cant)) {
+      setError('La cantidad debe ser un número entero.')
+      return
+    }
+    if (tipo === 'Ajuste') {
+      if (cant === 0) {
+        setError('El ajuste no puede ser 0.')
+        return
+      }
+    } else if (cant <= 0) {
+      setError('La cantidad debe ser mayor a 0.')
+      return
+    }
     setGuardando(true)
     try {
       await registrarMovimiento(producto.id, {
         tipo_movimiento: tipo,
-        cantidad: Number(cantidad),
+        cantidad: cant,
         referencia: referencia || undefined,
       })
       onGuardado()
@@ -276,7 +302,7 @@ function FormMovimiento({
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Movimiento de stock</h2>
         <p className="ayuda">
@@ -299,6 +325,8 @@ function FormMovimiento({
             type="number"
             value={cantidad}
             onChange={(e) => setCantidad(e.target.value)}
+            min={tipo === 'Ajuste' ? undefined : 1}
+            step={1}
             required
           />
         </label>
@@ -319,6 +347,99 @@ function FormMovimiento({
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () => void }) {
+  const [movs, setMovs] = useState<KardexMovimiento[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelado = false
+    setCargando(true)
+    historialKardex(producto.id)
+      .then((m) => {
+        if (!cancelado) setMovs(m)
+      })
+      .catch((err) => {
+        if (!cancelado) setError(err instanceof Error ? err.message : 'Error al cargar el historial')
+      })
+      .finally(() => {
+        if (!cancelado) setCargando(false)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [producto.id])
+
+  function cambioConSigno(m: KardexMovimiento): number {
+    if (m.tipo_movimiento === 'Ajuste') return m.cantidad
+    if (m.tipo_movimiento === 'Salida por Venta') return -Math.abs(m.cantidad)
+    return Math.abs(m.cantidad)
+  }
+
+  return (
+    <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
+      <div className="modal modal--ancho" onClick={(e) => e.stopPropagation()}>
+        <h2>Historial de stock</h2>
+        <p className="ayuda">
+          {producto.nombre} · stock actual: {producto.stock}
+        </p>
+        {error && <p className="error">{error}</p>}
+        {cargando ? (
+          <p className="ayuda">Cargando…</p>
+        ) : movs.length === 0 ? (
+          <Vacio
+            titulo="Sin movimientos"
+            detalle="Este producto aún no tiene entradas ni salidas registradas."
+          />
+        ) : (
+          <div className="tabla-wrap tabla-wrap--cards">
+            <table className="tabla tabla--cards">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Tipo</th>
+                  <th className="derecha">Cambio</th>
+                  <th className="derecha">Stock</th>
+                  <th>Referencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movs.map((m) => {
+                  const cambio = cambioConSigno(m)
+                  return (
+                    <tr key={m.id}>
+                      <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
+                      <td data-label="Tipo">{m.tipo_movimiento}</td>
+                      <td data-label="Cambio" className="derecha">
+                        <span
+                          className={
+                            cambio < 0 ? 'diferencia diferencia--bad' : 'diferencia diferencia--ok'
+                          }
+                        >
+                          {cambio > 0 ? `+${cambio}` : cambio}
+                        </span>
+                      </td>
+                      <td data-label="Stock" className="derecha">
+                        {m.saldo_stock}
+                      </td>
+                      <td data-label="Referencia">{m.referencia ?? '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="acciones">
+          <button type="button" className="boton boton--secundario" onClick={onCerrar}>
+            Cerrar
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

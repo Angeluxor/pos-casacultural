@@ -25,6 +25,17 @@ class TurnoCajaResponse(TurnoCajaBase):
     class Config:
         from_attributes = True
 
+class TurnoCajaHistorial(TurnoCajaResponse):
+    usuario_apertura_nombre: Optional[str] = None
+    usuario_cierre_nombre: Optional[str] = None
+    entradas: float = 0.0
+    salidas: float = 0.0
+    esperado: float = 0.0
+    diferencia: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
 class RegistroCajaBase(BaseModel):
     tipo: TipoMovimientoCaja
     referencia: str

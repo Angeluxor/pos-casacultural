@@ -10,6 +10,7 @@ import type { RolUsuario, Usuario } from '../api/types'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
 import { Vacio } from '../components/Vacio'
+import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
 
 const ROLES: RolUsuario[] = ['Admin', 'Cajero']
@@ -198,7 +199,7 @@ function FormUsuario({
   }
 
   return (
-    <div className="modal-overlay" onClick={onCerrar}>
+    <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>{esEdicion ? 'Editar usuario' : 'Nuevo usuario'}</h2>
         {error && <p className="error">{error}</p>}

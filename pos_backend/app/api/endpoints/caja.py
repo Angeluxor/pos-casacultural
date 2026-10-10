@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.db.session import get_db
 from app.db.models import Usuario
 from app.api.deps import get_current_active_user
-from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, RegistroCajaCreate, RegistroCajaResponse
+from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse
+from app.schemas.common import Pagina
 from app.crud import crud_caja
 
 router = APIRouter()
@@ -24,6 +25,26 @@ def obtener_caja_activa(db: Session = Depends(get_db), current_user: Usuario = D
     if not caja:
         raise HTTPException(status_code=404, detail="No hay ninguna caja abierta actualmente.")
     return caja
+
+@router.get("/turnos", response_model=Pagina[TurnoCajaHistorial])
+def listar_turnos(
+    skip: int = 0,
+    limit: int = 30,
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    incluir_abierta: bool = False,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    total, items = crud_caja.obtener_turnos(
+        db=db,
+        skip=skip,
+        limit=limit,
+        desde=desde,
+        hasta=hasta,
+        incluir_abierta=incluir_abierta,
+    )
+    return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.post("/movimientos", response_model=RegistroCajaResponse)
 def registrar_movimiento(movimiento: RegistroCajaCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):

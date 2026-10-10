@@ -59,7 +59,7 @@ export function Layout() {
         </button>
         <div className="topbar__marca">
           <span className="brand-dot" />
-          <strong>Casa Cultural</strong>
+          <strong>Casi Obsceno</strong>
         </div>
         <span className="avatar avatar--mini">
           {usuario?.nombre?.charAt(0).toUpperCase()}
@@ -75,7 +75,7 @@ export function Layout() {
         <div className="sidebar__brand">
           <span className="brand-dot" />
           <div className="brand-text">
-            <strong>Casa Cultural</strong>
+            <strong>Casi Obsceno</strong>
             <small>POS</small>
           </div>
         </div>
