@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
 from typing import Optional
+from datetime import date, datetime, time, timedelta
 
 from app.db.session import get_db
 from app.db.models import Usuario, Cliente
@@ -16,6 +17,7 @@ from app.schemas.factura import (
 from app.schemas.common import Pagina
 from app.crud import crud_factura
 from app.db.models import Factura
+from app.core.timezone import BOGOTA_TZ
 
 router = APIRouter()
 
@@ -32,6 +34,8 @@ def listar_facturas(
     skip: int = 0,
     limit: int = 30,
     buscar: Optional[str] = None,
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -47,6 +51,18 @@ def listar_facturas(
             except ValueError:
                 pass
         query = query.filter(cond)
+    if desde:
+        try:
+            d = date.fromisoformat(desde)
+            query = query.filter(Factura.fecha >= datetime.combine(d, time.min, tzinfo=BOGOTA_TZ))
+        except ValueError:
+            pass
+    if hasta:
+        try:
+            h = date.fromisoformat(hasta)
+            query = query.filter(Factura.fecha < datetime.combine(h + timedelta(days=1), time.min, tzinfo=BOGOTA_TZ))
+        except ValueError:
+            pass
     total = query.count()
     items = query.order_by(Factura.id.desc()).offset(skip).limit(limit).all()
     return Pagina(items=items, total=total, skip=skip, limit=limit)

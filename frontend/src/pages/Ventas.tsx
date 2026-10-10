@@ -51,10 +51,24 @@ export function Ventas() {
   const { usuario } = useAuth()
   const esAdmin = usuario?.rol === 'Admin'
 
-  const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
-    usePaginacion(listarFacturasPaginado, 30)
+  const {
+    datos,
+    skip,
+    setSkip,
+    buscar,
+    setBuscar,
+    desde,
+    setDesde,
+    hasta,
+    setHasta,
+    cargando,
+    error,
+    recargar,
+    tamano,
+  } = usePaginacion(listarFacturasPaginado, 30)
   const facturas = datos?.items ?? []
   const total = datos?.total ?? 0
+  const hayFiltros = buscar.trim() !== '' || desde !== '' || hasta !== ''
 
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [productos, setProductos] = useState<Producto[]>([])
@@ -113,6 +127,37 @@ export function Ventas() {
           value={buscar}
           onChange={(e) => setBuscar(e.target.value)}
         />
+        <label className="campo-fecha">
+          <span>Desde</span>
+          <input
+            type="date"
+            value={desde}
+            max={hasta || undefined}
+            onChange={(e) => setDesde(e.target.value)}
+          />
+        </label>
+        <label className="campo-fecha">
+          <span>Hasta</span>
+          <input
+            type="date"
+            value={hasta}
+            min={desde || undefined}
+            onChange={(e) => setHasta(e.target.value)}
+          />
+        </label>
+        {hayFiltros && (
+          <button
+            type="button"
+            className="boton boton--mini boton--secundario"
+            onClick={() => {
+              setBuscar('')
+              setDesde('')
+              setHasta('')
+            }}
+          >
+            Limpiar filtros
+          </button>
+        )}
       </div>
 
       {errorCatalogo && <p className="error">Catálogo: {errorCatalogo}</p>}
@@ -124,10 +169,10 @@ export function Ventas() {
         <p className="error">{error}</p>
       ) : facturas.length === 0 ? (
         <Vacio
-          titulo={buscar.trim() ? 'Sin resultados' : 'Aún no hay ventas'}
+          titulo={hayFiltros ? 'Sin resultados' : 'Aún no hay ventas'}
           detalle={
-            buscar.trim()
-              ? `Nada coincide con «${buscar.trim()}».`
+            hayFiltros
+              ? 'No hay facturas que coincidan con los filtros aplicados.'
               : 'Registra tu primera venta con «Nueva venta».'
           }
         />

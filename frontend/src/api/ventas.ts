@@ -50,11 +50,15 @@ export function listarFacturasPaginado(params: {
   skip: number
   limit: number
   buscar?: string
+  desde?: string
+  hasta?: string
 }): Promise<Pagina<Factura>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
   if (params.buscar) q.set('buscar', params.buscar)
+  if (params.desde) q.set('desde', params.desde)
+  if (params.hasta) q.set('hasta', params.hasta)
   return apiFetch<Pagina<Factura>>(`/api/facturas/?${q.toString()}`)
 }
 

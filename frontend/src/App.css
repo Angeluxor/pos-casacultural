@@ -325,6 +325,18 @@ select:focus {
   min-width: 200px;
 }
 
+.campo-fecha {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.campo-fecha input {
+  padding: 8px 10px;
+}
+
 .tabla-wrap {
   border: 1px solid var(--borde);
   border-radius: 12px;
@@ -733,6 +745,20 @@ select:focus {
   border-top: none;
   background: var(--tarjeta);
   border-radius: 0 0 12px 12px;
+}
+
+.paginacion__ir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.campo-pagina {
+  width: 64px;
+  padding: 7px 8px;
+  text-align: center;
 }
 
 /* ---------- Barra superior y menú lateral (solo móvil) ---------- */

@@ -5,6 +5,8 @@ export type CargarPagina<T> = (params: {
   skip: number
   limit: number
   buscar: string
+  desde?: string
+  hasta?: string
 }) => Promise<Pagina<T>>
 
 export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
@@ -12,6 +14,8 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
   const [skip, setSkip] = useState(0)
   const [buscar, setBuscar] = useState('')
   const [buscarAplicado, setBuscarAplicado] = useState('')
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
@@ -25,9 +29,19 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
   }, [buscar])
 
   useEffect(() => {
+    setSkip(0)
+  }, [desde, hasta])
+
+  useEffect(() => {
     let cancelado = false
     setCargando(true)
-    cargar({ skip, limit: tamano, buscar: buscarAplicado })
+    cargar({
+      skip,
+      limit: tamano,
+      buscar: buscarAplicado,
+      desde: desde || undefined,
+      hasta: hasta || undefined,
+    })
       .then((p) => {
         if (cancelado) return
         setDatos(p)
@@ -43,9 +57,23 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
     return () => {
       cancelado = true
     }
-  }, [cargar, skip, buscarAplicado, tamano, version])
+  }, [cargar, skip, buscarAplicado, desde, hasta, tamano, version])
 
   const recargar = useCallback(() => setVersion((v) => v + 1), [])
 
-  return { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano }
+  return {
+    datos,
+    skip,
+    setSkip,
+    buscar,
+    setBuscar,
+    desde,
+    setDesde,
+    hasta,
+    setHasta,
+    cargando,
+    error,
+    recargar,
+    tamano,
+  }
 }
