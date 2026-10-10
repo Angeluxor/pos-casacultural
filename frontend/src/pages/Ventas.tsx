@@ -21,6 +21,19 @@ import { usePaginacion } from '../lib/usePaginacion'
 
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta', 'Otro']
 
+const MOTIVOS_ANULACION = [
+  'Error de digitación',
+  'Devolución de producto',
+  'Cliente canceló',
+  'Producto agotado',
+  'Duplicado',
+  'Otro',
+]
+
+function contactoSecundario(c: Cliente): string {
+  return c.celular || c.correo || ''
+}
+
 function claseEstado(estado: EstadoFactura): string {
   switch (estado) {
     case 'Pagada':
@@ -251,7 +264,10 @@ function FormVenta({
     const q = buscarCliente.trim().toLowerCase()
     if (!q) return []
     return clientes
-      .filter((c) => c.nombre.toLowerCase().includes(q) || c.documento.toLowerCase().includes(q))
+      .filter((c) => {
+        const contacto = `${c.celular ?? ''} ${c.correo ?? ''}`.toLowerCase()
+        return c.nombre.toLowerCase().includes(q) || contacto.includes(q)
+      })
       .slice(0, 8)
   }, [clientes, buscarCliente])
 
@@ -331,7 +347,8 @@ function FormVenta({
         {cliente ? (
           <div className="seleccion-chip">
             <span>
-              {cliente.nombre} — {cliente.documento}
+              {cliente.nombre}
+              {contactoSecundario(cliente) ? ` — ${contactoSecundario(cliente)}` : ''}
             </span>
             <button type="button" className="boton boton--mini" onClick={() => setCliente(null)}>
               Quitar
@@ -341,7 +358,7 @@ function FormVenta({
           <div className="buscador-producto">
             <input
               id="venta-cliente"
-              placeholder="Buscar cliente por nombre o documento… (vacío = Consumidor final)"
+              placeholder="Buscar cliente por nombre, celular o correo… (vacío = Consumidor final)"
               value={buscarCliente}
               onChange={(e) => setBuscarCliente(e.target.value)}
             />
@@ -357,7 +374,7 @@ function FormVenta({
                       }}
                     >
                       <span>{c.nombre}</span>
-                      <span className="ayuda">{c.documento}</span>
+                      <span className="ayuda">{contactoSecundario(c)}</span>
                     </button>
                   </li>
                 ))}
@@ -529,10 +546,14 @@ function FormCobro({
   const [guardando, setGuardando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [anulando, setAnulando] = useState(false)
+  const [mostrandoAnular, setMostrandoAnular] = useState(false)
+  const [motivoAnular, setMotivoAnular] = useState(MOTIVOS_ANULACION[0])
+  const [motivoOtro, setMotivoOtro] = useState('')
 
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const editable = f.estado !== 'Anulada'
-  const unaSolaLinea = f.detalles.length <= 1
+  const activos = f.detalles.filter((d) => !d.anulado)
+  const unaSolaLinea = activos.length <= 1
 
   const resultados = useMemo(() => {
     const q = buscar.trim().toLowerCase()
@@ -605,17 +626,12 @@ function FormCobro({
     }
   }
 
-  async function anular() {
-    const pagado = f.total - f.saldo
-    const aviso =
-      pagado > 0
-        ? `La factura #${f.id} tiene ${moneda.format(pagado)} cobrados. Se devolverá ese dinero desde la caja abierta y se reintegrará el stock. ¿Anular?`
-        : `¿Anular la factura #${f.id}? Se reintegrará el stock.`
-    if (!window.confirm(aviso)) return
+  async function confirmarAnular() {
+    const motivo = motivoAnular === 'Otro' ? motivoOtro.trim() || 'Otro' : motivoAnular
     setError('')
     setAnulando(true)
     try {
-      await anularFactura(f.id)
+      await anularFactura(f.id, motivo)
       onGuardado()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al anular la factura')
@@ -635,6 +651,12 @@ function FormCobro({
           · Saldo {moneda.format(f.saldo)}{' '}
           <span className={claseEstado(f.estado)}>{f.estado}</span>
         </p>
+        {f.estado === 'Anulada' && (f.motivo_anulacion || f.fecha_anulacion) && (
+          <p className="ayuda">
+            Anulada{f.fecha_anulacion ? ` el ${formatoFecha(f.fecha_anulacion)}` : ''}
+            {f.motivo_anulacion ? ` · Motivo: ${f.motivo_anulacion}` : ''}
+          </p>
+        )}
         {error && <p className="error">{error}</p>}
 
         {editable && (
@@ -687,6 +709,20 @@ function FormCobro({
             <tbody>
               {f.detalles.map((d) => {
                 const nombre = productosPorId.get(d.producto_id)?.nombre ?? `Producto #${d.producto_id}`
+                if (d.anulado) {
+                  return (
+                    <tr key={d.id} className="fila-retirada">
+                      <td>
+                        <span className="tachado">{nombre}</span>{' '}
+                        <span className="etiqueta-retirado">Retirado</span>
+                      </td>
+                      <td className="derecha tachado">{moneda.format(d.precio_unitario)}</td>
+                      <td className="derecha tachado">{d.cantidad}</td>
+                      <td className="derecha tachado">{moneda.format(d.subtotal)}</td>
+                      {editable && <td></td>}
+                    </tr>
+                  )
+                }
                 return (
                   <tr key={d.id}>
                     <td>{nombre}</td>
@@ -782,10 +818,10 @@ function FormCobro({
                 <button
                   type="button"
                   className="boton boton--danger"
-                  onClick={() => void anular()}
+                  onClick={() => setMostrandoAnular(true)}
                   disabled={anulando || ocupado}
                 >
-                  {anulando ? 'Anulando…' : 'Anular'}
+                  Anular factura
                 </button>
               )}
               <span className="espaciador" />
@@ -807,10 +843,10 @@ function FormCobro({
                 <button
                   type="button"
                   className="boton boton--danger"
-                  onClick={() => void anular()}
+                  onClick={() => setMostrandoAnular(true)}
                   disabled={anulando || ocupado}
                 >
-                  {anulando ? 'Anulando…' : 'Anular'}
+                  Anular factura
                 </button>
               )}
               <span className="espaciador" />
@@ -819,6 +855,54 @@ function FormCobro({
               </button>
             </div>
           </>
+        )}
+
+        {esAdmin && f.estado !== 'Anulada' && mostrandoAnular && (
+          <div className="panel-anular">
+            <p className="ayuda">
+              {pagado > 0
+                ? `Se devolverán ${moneda.format(pagado)} desde la caja abierta y se reintegrará el stock de los productos activos.`
+                : 'Se reintegrará el stock de los productos activos.'}{' '}
+              Esta acción no se puede deshacer.
+            </p>
+            <div className="fila-campos">
+              <label>
+                Motivo de anulación
+                <select value={motivoAnular} onChange={(e) => setMotivoAnular(e.target.value)}>
+                  {MOTIVOS_ANULACION.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {motivoAnular === 'Otro' && (
+                <label>
+                  Describe el motivo
+                  <input value={motivoOtro} onChange={(e) => setMotivoOtro(e.target.value)} />
+                </label>
+              )}
+            </div>
+            <div className="acciones">
+              <button
+                type="button"
+                className="boton boton--danger"
+                onClick={() => void confirmarAnular()}
+                disabled={anulando || ocupado || (motivoAnular === 'Otro' && !motivoOtro.trim())}
+              >
+                {anulando ? 'Anulando…' : 'Confirmar anulación'}
+              </button>
+              <span className="espaciador" />
+              <button
+                type="button"
+                className="boton boton--secundario"
+                onClick={() => setMostrandoAnular(false)}
+                disabled={anulando}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         )}
       </form>
     </div>

@@ -17,14 +17,24 @@ def obtener_clientes(db: Session, skip: int = 0, limit: int = 100, buscar: Optio
     query = db.query(Cliente)
     if buscar:
         filtro = f"%{buscar.strip()}%"
-        query = query.filter(Cliente.nombre.ilike(filtro) | Cliente.documento.ilike(filtro))
+        query = query.filter(
+            Cliente.nombre.ilike(filtro)
+            | Cliente.documento.ilike(filtro)
+            | Cliente.celular.ilike(filtro)
+            | Cliente.correo.ilike(filtro)
+        )
     total = query.count()
     items = query.order_by(Cliente.nombre).offset(skip).limit(limit).all()
     return total, items
 
 
 def crear_cliente(db: Session, cliente: ClienteCreate):
-    db_cliente = Cliente(nombre=cliente.nombre, documento=cliente.documento)
+    db_cliente = Cliente(
+        nombre=cliente.nombre,
+        documento=cliente.documento,
+        celular=cliente.celular,
+        correo=cliente.correo,
+    )
     db.add(db_cliente)
     db.commit()
     db.refresh(db_cliente)

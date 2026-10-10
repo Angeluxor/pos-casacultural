@@ -13,6 +13,7 @@ class DetalleFacturaResponse(BaseModel):
     cantidad: int
     precio_unitario: float
     subtotal: float
+    anulado: bool = False
 
     class Config:
         from_attributes = True
@@ -55,6 +56,9 @@ class FacturaResponse(BaseModel):
     total: float
     saldo: float
     estado: EstadoFactura
+    motivo_anulacion: Optional[str] = None
+    fecha_anulacion: Optional[datetime] = None
+    anulada_por_id: Optional[int] = None
     detalles: List[DetalleFacturaResponse] = []
     pagos: List[PagoResponse] = []
 

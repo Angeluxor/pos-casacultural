@@ -371,6 +371,45 @@ select:focus {
   justify-content: flex-end;
 }
 
+/* ---------- Producto retirado de una factura ---------- */
+.fila-retirada {
+  opacity: 0.6;
+}
+
+.fila-retirada:hover {
+  background: var(--bg);
+}
+
+.tachado {
+  text-decoration: line-through;
+}
+
+.etiqueta-retirado {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: var(--bg);
+  color: var(--error);
+  border: 1px solid var(--borde);
+}
+
+/* ---------- Panel de anulación ---------- */
+.panel-anular {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--error);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.panel-anular .acciones {
+  margin-top: 12px;
+}
+
 /* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed;

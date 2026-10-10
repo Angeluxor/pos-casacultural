@@ -4,6 +4,7 @@ from app.db.models import (
     Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja, 
     Pago, EstadoFactura, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
 )
+from app.core.timezone import get_colombia_time
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
 
 def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
@@ -143,6 +144,10 @@ def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | 
 
     # 1. Devolver el stock y registrar el kardex por la devolución
     for detalle in factura.detalles:
+        # Los productos ya retirados de la factura devolvieron su stock al momento
+        # del retiro; no se vuelven a reintegrar al anular.
+        if detalle.anulado:
+            continue
         producto = (
             db.query(Producto)
             .filter(Producto.id == detalle.producto_id)
@@ -180,9 +185,12 @@ def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | 
             )
         )
 
-    # 3. Marcar la factura como anulada
+    # 3. Marcar la factura como anulada y guardar la traza
     factura.estado = EstadoFactura.ANULADA
     factura.saldo = 0
+    factura.motivo_anulacion = motivo
+    factura.fecha_anulacion = get_colombia_time()
+    factura.anulada_por_id = usuario_id
 
     db.commit()
     db.refresh(factura)
@@ -238,7 +246,7 @@ def _mover_stock(
 
 def _recalcular_factura(db: Session, factura: Factura, usuario_id: int):
     """Recalcula total/saldo/estado y reembolsa sobrepagos desde la caja abierta."""
-    factura.total = round(sum(d.subtotal for d in factura.detalles), 2)
+    factura.total = round(sum(d.subtotal for d in factura.detalles if not d.anulado), 2)
     pagado = round(sum(p.valor for p in factura.pagos), 2)
     saldo = round(factura.total - pagado, 2)
 
@@ -285,7 +293,9 @@ def agregar_item_factura(db: Session, factura_id: int, item_in: ItemFacturaCreat
         db.rollback()
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
-    detalle = next((d for d in factura.detalles if d.producto_id == producto.id), None)
+    detalle = next(
+        (d for d in factura.detalles if d.producto_id == producto.id and not d.anulado), None
+    )
     if detalle:
         detalle.cantidad += item_in.cantidad
         detalle.subtotal = detalle.precio_unitario * detalle.cantidad
@@ -323,20 +333,25 @@ def actualizar_item_factura(
         db.rollback()
         raise HTTPException(status_code=404, detail="El producto no está en esta factura.")
 
+    if detalle.anulado:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="El producto ya fue retirado de esta factura.")
+
     if item_in.cantidad == 0:
-        if len(factura.detalles) <= 1:
+        activos = [d for d in factura.detalles if not d.anulado]
+        if len(activos) <= 1:
             db.rollback()
             raise HTTPException(
                 status_code=400,
-                detail="La factura debe conservar al menos un producto. Para dejarla sin efecto usa Anular.",
+                detail="La factura debe conservar al menos un producto activo. Para dejarla sin efecto usa Anular.",
             )
         producto = (
             db.query(Producto).filter(Producto.id == detalle.producto_id).with_for_update().first()
         )
         if producto:
-            _mover_stock(db, producto, detalle.cantidad, usuario_id, f"Devolución Factura #{factura.id}")
-        factura.detalles.remove(detalle)
-        db.delete(detalle)
+            _mover_stock(db, producto, detalle.cantidad, usuario_id, f"Retiro de Factura #{factura.id}")
+        # Persistimos la línea como retirada en vez de borrarla (traza de fraude).
+        detalle.anulado = True
     else:
         diff = item_in.cantidad - detalle.cantidad
         if diff != 0:
@@ -372,19 +387,24 @@ def eliminar_item_factura(db: Session, factura_id: int, detalle_id: int, usuario
         db.rollback()
         raise HTTPException(status_code=404, detail="El producto no está en esta factura.")
 
-    if len(factura.detalles) <= 1:
+    if detalle.anulado:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="El producto ya fue retirado de esta factura.")
+
+    activos = [d for d in factura.detalles if not d.anulado]
+    if len(activos) <= 1:
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="La factura debe conservar al menos un producto. Para dejarla sin efecto usa Anular.",
+            detail="La factura debe conservar al menos un producto activo. Para dejarla sin efecto usa Anular.",
         )
 
     producto = db.query(Producto).filter(Producto.id == detalle.producto_id).with_for_update().first()
     if producto:
-        _mover_stock(db, producto, detalle.cantidad, usuario_id, f"Devolución Factura #{factura.id}")
+        _mover_stock(db, producto, detalle.cantidad, usuario_id, f"Retiro de Factura #{factura.id}")
 
-    factura.detalles.remove(detalle)
-    db.delete(detalle)
+    # No se borra la línea: se marca como retirada para conservar la traza.
+    detalle.anulado = True
     _recalcular_factura(db, factura, usuario_id)
 
     db.commit()

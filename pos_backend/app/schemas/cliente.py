@@ -4,7 +4,9 @@ from typing import Optional
 
 class ClienteBase(BaseModel):
     nombre: str
-    documento: str
+    documento: Optional[str] = None
+    celular: Optional[str] = None
+    correo: Optional[str] = None
 
 
 class ClienteCreate(ClienteBase):
@@ -14,6 +16,8 @@ class ClienteCreate(ClienteBase):
 class ClienteUpdate(BaseModel):
     nombre: Optional[str] = None
     documento: Optional[str] = None
+    celular: Optional[str] = None
+    correo: Optional[str] = None
 
 
 class ClienteResponse(ClienteBase):

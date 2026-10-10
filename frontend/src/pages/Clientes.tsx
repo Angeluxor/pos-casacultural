@@ -54,7 +54,7 @@ export function Clientes() {
       <div className="barra">
         <input
           className="campo-busqueda"
-          placeholder="Buscar por nombre o documento…"
+          placeholder="Buscar por nombre, celular o correo…"
           value={buscar}
           onChange={(e) => setBuscar(e.target.value)}
         />
@@ -80,7 +80,8 @@ export function Clientes() {
               <thead>
                 <tr>
                   <th>Nombre</th>
-                  <th>Documento</th>
+                  <th>Celular</th>
+                  <th>Correo</th>
                   <th></th>
                 </tr>
               </thead>
@@ -88,7 +89,8 @@ export function Clientes() {
                 {clientes.map((c) => (
                   <tr key={c.id}>
                     <td>{c.nombre}</td>
-                    <td>{c.documento}</td>
+                    <td>{c.celular || '—'}</td>
+                    <td>{c.correo || '—'}</td>
                     <td>
                       <div className="acciones-fila">
                         <button
@@ -147,7 +149,8 @@ function FormCliente({
 }) {
   const esEdicion = cliente !== null
   const [nombre, setNombre] = useState(cliente?.nombre ?? '')
-  const [documento, setDocumento] = useState(cliente?.documento ?? '')
+  const [celular, setCelular] = useState(cliente?.celular ?? '')
+  const [correo, setCorreo] = useState(cliente?.correo ?? '')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
@@ -156,10 +159,11 @@ function FormCliente({
     setError('')
     setGuardando(true)
     try {
+      const datos = { nombre, celular: celular || null, correo: correo || null }
       if (cliente) {
-        await actualizarCliente(cliente.id, { nombre, documento })
+        await actualizarCliente(cliente.id, datos)
       } else {
-        await crearCliente({ nombre, documento })
+        await crearCliente(datos)
       }
       onGuardado()
     } catch (err) {
@@ -179,8 +183,22 @@ function FormCliente({
           <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />
         </label>
         <label>
-          Documento
-          <input value={documento} onChange={(e) => setDocumento(e.target.value)} required />
+          Celular
+          <input
+            value={celular}
+            onChange={(e) => setCelular(e.target.value)}
+            inputMode="tel"
+            placeholder="Opcional"
+          />
+        </label>
+        <label>
+          Correo
+          <input
+            type="email"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            placeholder="Opcional"
+          />
         </label>
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>

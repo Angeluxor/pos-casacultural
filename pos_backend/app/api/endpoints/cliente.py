@@ -13,9 +13,10 @@ router = APIRouter()
 
 @router.post("/", response_model=ClienteResponse)
 def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    db_cliente = crud_cliente.obtener_cliente_por_documento(db, documento=cliente.documento)
-    if db_cliente:
-        raise HTTPException(status_code=400, detail="Ya existe un cliente con este documento")
+    if cliente.documento:
+        db_cliente = crud_cliente.obtener_cliente_por_documento(db, documento=cliente.documento)
+        if db_cliente:
+            raise HTTPException(status_code=400, detail="Ya existe un cliente con este documento")
     return crud_cliente.crear_cliente(db=db, cliente=cliente)
 
 @router.get("/", response_model=Pagina[ClienteResponse])
@@ -32,7 +33,7 @@ def leer_cliente(cliente_id: int, db: Session = Depends(get_db), current_user: U
 
 @router.put("/{cliente_id}", response_model=ClienteResponse)
 def actualizar_cliente(cliente_id: int, cliente: ClienteUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    if cliente.documento is not None:
+    if cliente.documento:
         existente = crud_cliente.obtener_cliente_por_documento(db, documento=cliente.documento)
         if existente and existente.id != cliente_id:
             raise HTTPException(status_code=400, detail="Ya existe otro cliente con este documento")

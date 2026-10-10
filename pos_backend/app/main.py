@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db.base_class import Base
 from app.db.session import engine
+from app.db.migraciones import aplicar_migraciones
 from app.core.config import CORS_ORIGINS
 
 # Importar modelos para que SQLAlchemy los reconozca al crear las tablas
@@ -12,6 +13,8 @@ from app.api.endpoints import auth, caja, usuario, producto, factura, cliente, d
 
 # Crear tablas en la base de datos (En producción usar Alembic)
 Base.metadata.create_all(bind=engine)
+# Aplicar cambios aditivos sobre tablas ya existentes (idempotente)
+aplicar_migraciones()
 
 app = FastAPI(
     title="POS Casa Cultural API",

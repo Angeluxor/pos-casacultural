@@ -4,17 +4,23 @@ import type { Pagina } from './types'
 export type Cliente = {
   id: number
   nombre: string
-  documento: string
+  documento: string | null
+  celular: string | null
+  correo: string | null
 }
 
 export type ClienteCreate = {
   nombre: string
-  documento: string
+  documento?: string | null
+  celular?: string | null
+  correo?: string | null
 }
 
 export type ClienteUpdate = {
   nombre?: string
-  documento?: string
+  documento?: string | null
+  celular?: string | null
+  correo?: string | null
 }
 
 export async function listarClientes(): Promise<Cliente[]> {

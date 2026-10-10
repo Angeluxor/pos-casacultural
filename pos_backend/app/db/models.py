@@ -60,7 +60,9 @@ class Cliente(Base):
     __tablename__ = "clientes"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, index=True)
-    documento = Column(String, unique=True, index=True)
+    documento = Column(String, unique=True, index=True, nullable=True)
+    celular = Column(String, nullable=True)
+    correo = Column(String, nullable=True)
     facturas = relationship("Factura", back_populates="cliente")
 
 class Producto(Base):
@@ -97,8 +99,14 @@ class Factura(Base):
     saldo = Column(Float, default=0.0)
     estado = Column(Enum(EstadoFactura), default=EstadoFactura.PENDIENTE)
 
+    # Trazabilidad de anulación
+    motivo_anulacion = Column(String, nullable=True)
+    fecha_anulacion = Column(DateTime(timezone=True), nullable=True)
+    anulada_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
     cliente = relationship("Cliente", back_populates="facturas")
-    vendedor = relationship("Usuario")
+    vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
+    anulada_por = relationship("Usuario", foreign_keys=[anulada_por_id])
     detalles = relationship("DetalleFactura", back_populates="factura")
     pagos = relationship("Pago", back_populates="factura")
 
@@ -110,6 +118,9 @@ class DetalleFactura(Base):
     cantidad = Column(Integer, default=1)
     precio_unitario = Column(Float)
     subtotal = Column(Float)
+    # Un producto retirado de la factura no se borra: se marca para conservar
+    # la traza (control de fraude) y se descuenta del total.
+    anulado = Column(Boolean, default=False, nullable=False)
 
     factura = relationship("Factura", back_populates="detalles")
     producto = relationship("Producto")

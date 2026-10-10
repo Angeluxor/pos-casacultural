@@ -10,6 +10,7 @@ export type DetalleFactura = {
   cantidad: number
   precio_unitario: number
   subtotal: number
+  anulado: boolean
 }
 
 export type Pago = {
@@ -28,6 +29,9 @@ export type Factura = {
   total: number
   saldo: number
   estado: EstadoFactura
+  motivo_anulacion: string | null
+  fecha_anulacion: string | null
+  anulada_por_id: number | null
   detalles: DetalleFactura[]
   pagos: Pago[]
 }
