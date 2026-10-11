@@ -365,6 +365,10 @@ select:focus {
   font-size: 14px;
 }
 
+.tabla td {
+  font-weight: 300;
+}
+
 .tabla th {
   font-size: 12px;
   text-transform: uppercase;
