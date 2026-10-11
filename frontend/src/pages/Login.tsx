@@ -32,6 +32,7 @@ export function Login() {
     <div className="pantalla">
       <div className="tarjeta">
         <header className="marca">
+          <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo logo--login" />
           <h1>Casi Obsceno</h1>
           <span className="estado">Acceso al sistema</span>
         </header>

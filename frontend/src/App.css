@@ -197,6 +197,22 @@ select:focus {
   border: 2px solid var(--acento);
 }
 
+.logo {
+  height: 30px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.logo--sidebar {
+  height: 28px;
+}
+
+.logo--login {
+  height: 72px;
+  align-self: center;
+}
+
 .brand-text {
   display: flex;
   flex-direction: column;

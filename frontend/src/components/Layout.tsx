@@ -58,7 +58,7 @@ export function Layout() {
           </svg>
         </button>
         <div className="topbar__marca">
-          <span className="brand-dot" />
+          <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo" />
           <strong>Casi Obsceno</strong>
         </div>
         <span className="avatar avatar--mini">
@@ -73,7 +73,7 @@ export function Layout() {
 
       <aside className={menuAbierto ? 'sidebar sidebar--abierto' : 'sidebar'}>
         <div className="sidebar__brand">
-          <span className="brand-dot" />
+          <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo logo--sidebar" />
           <div className="brand-text">
             <strong>Casi Obsceno</strong>
             <small>POS</small>
