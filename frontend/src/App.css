@@ -1170,3 +1170,32 @@ select:focus {
   }
 }
 
+/* ---------- Pestañas de reportes ---------- */
+.fichas {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.ficha {
+  border: 1px solid var(--borde);
+  background: var(--tarjeta);
+  color: var(--texto);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.ficha:hover {
+  border-color: var(--primario);
+}
+
+.ficha--activa {
+  background: var(--primario);
+  border-color: var(--primario);
+  color: #fff;
+}
+

@@ -66,3 +66,35 @@ export async function apiJson<T>(path: string, method: string, cuerpo: unknown):
 export async function apiForm<T>(path: string, form: Record<string, string>): Promise<T> {
   return apiFetch<T>(path, { method: 'POST', body: new URLSearchParams(form) })
 }
+
+export async function apiDescargar(path: string, nombreArchivo: string): Promise<void> {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, { headers })
+  } catch {
+    throw new ApiError(0, 'No se pudo conectar con el servidor')
+  }
+  if (!res.ok) {
+    let detalle = `Error ${res.status}`
+    try {
+      const data = await res.json()
+      if (typeof data.detail === 'string') detalle = data.detail
+    } catch {
+      /* respuesta sin JSON */
+    }
+    throw new ApiError(res.status, detalle)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombreArchivo
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}

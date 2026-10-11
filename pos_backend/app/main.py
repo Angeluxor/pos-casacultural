@@ -9,7 +9,7 @@ from app.core.config import CORS_ORIGINS
 from app.db.models import *
 
 # Importar routers
-from app.api.endpoints import auth, caja, usuario, producto, factura, cliente, dashboard
+from app.api.endpoints import auth, caja, usuario, producto, factura, cliente, dashboard, reportes
 
 # Crear tablas en la base de datos (En producción usar Alembic)
 Base.metadata.create_all(bind=engine)
@@ -39,6 +39,7 @@ app.include_router(caja.router, prefix="/api/caja", tags=["Caja"])
 app.include_router(producto.router, prefix="/api/productos", tags=["Productos y Kardex"])
 app.include_router(factura.router, prefix="/api/facturas", tags=["Facturas y Ventas"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(reportes.router, prefix="/api/reportes", tags=["Reportes"])
 
 @app.get("/")
 def read_root():

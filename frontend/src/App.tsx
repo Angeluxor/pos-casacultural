@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Productos } from './pages/Productos'
 import { Clientes } from './pages/Clientes'
 import { Usuarios } from './pages/Usuarios'
+import { Reportes } from './pages/Reportes'
 import { Ventas } from './pages/Ventas'
 import { Caja } from './pages/Caja'
 import { Perfil } from './pages/Perfil'
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="perfil" element={<Perfil />} />
           <Route element={<AdminRoute />}>
             <Route path="usuarios" element={<Usuarios />} />
+            <Route path="reportes" element={<Reportes />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

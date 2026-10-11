@@ -87,9 +87,14 @@ export function Layout() {
             </NavLink>
           ))}
           {usuario?.rol === 'Admin' && (
-            <NavLink to="/usuarios" className={claseEnlace}>
-              Usuarios
-            </NavLink>
+            <>
+              <NavLink to="/usuarios" className={claseEnlace}>
+                Usuarios
+              </NavLink>
+              <NavLink to="/reportes" className={claseEnlace}>
+                Reportes
+              </NavLink>
+            </>
           )}
           <NavLink to="/perfil" className={claseEnlace}>
             Mi perfil
