@@ -1025,7 +1025,10 @@ function FormCobro({
       .slice(0, 8)
   }, [clientes, buscarCliente])
 
-  const pagado = f.total - f.saldo
+  // Lo realmente cobrado son los pagos; el saldo se topa en 0, así que
+  // `total - saldo` mentiría cuando la factura quedó pagada de más.
+  const pagado = round2(f.pagos.reduce((acc, p) => acc + p.valor, 0))
+  const saldoAFavor = Math.max(round2(pagado - f.total), 0)
 
   return (
     <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
@@ -1036,6 +1039,13 @@ function FormCobro({
           · Saldo {moneda.format(f.saldo)}{' '}
           <span className={claseEstado(f.estado)}>{f.estado}</span>
         </p>
+        {saldoAFavor > 0 && (
+          <p className="ayuda">
+            Saldo a favor del cliente: <strong>{moneda.format(saldoAFavor)}</strong>. Ajustar
+            cantidades no mueve la caja; si hay que devolver dinero, regístralo como movimiento de
+            caja.
+          </p>
+        )}
         {f.estado === 'Anulada' && (f.motivo_anulacion || f.fecha_anulacion) && (
           <p className="ayuda">
             Anulada{f.fecha_anulacion ? ` el ${formatoFecha(f.fecha_anulacion)}` : ''}
@@ -1098,7 +1108,7 @@ function FormCobro({
           <>
             <p className="ayuda">
               Agrega productos o ajusta cantidades (servicio a la mesa). Los cambios ajustan el stock
-              y, si hay dinero de más, se devuelve desde la caja.
+              y el saldo, pero no registran movimientos de caja.
             </p>
             <div className="buscador-producto">
               <input

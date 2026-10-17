@@ -278,43 +278,32 @@ def _mover_stock(
     )
 
 
-def _recalcular_factura(db: Session, factura: Factura, usuario_id: int):
-    """Recalcula total/saldo/estado y reembolsa sobrepagos desde la caja abierta."""
+def _recalcular_factura(db: Session, factura: Factura):
+    """Recalcula total, saldo y estado tras editar los items de una factura.
+
+    Editar cantidades NO es un evento de dinero: aquí solo se ajustan el total y
+    el saldo. La caja se mueve únicamente con pagos, anulación o movimientos
+    manuales, de modo que nunca aparecen ingresos/egresos fantasma. Si los pagos
+    ya cubren (o superan) el nuevo total, la factura queda Pagada con saldo 0 y el
+    exceso es un saldo a favor del cliente que no toca la caja.
+    """
     factura.total = round(sum(d.subtotal for d in factura.detalles if not d.anulado), 2)
     pagado = round(sum(p.valor for p in factura.pagos), 2)
     saldo = round(factura.total - pagado, 2)
 
-    if saldo < 0:
-        reembolso = -saldo
-        caja = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
-        if not caja:
-            db.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail="Se debe devolver dinero al cliente, pero no hay una caja abierta.",
-            )
-        db.add(
-            RegistroCaja(
-                turno_caja_id=caja.id,
-                usuario_id=usuario_id,
-                tipo=TipoMovimientoCaja.SALIDA,
-                referencia=f"Reembolso por modificación de venta #{factura.id}",
-                forma_pago=FormaPago.EFECTIVO,
-                monto=reembolso,
-                observacion="Devolución por modificación de venta",
-            )
-        )
-        saldo = 0
-
-    factura.saldo = saldo
     if saldo <= 0:
+        # Cubierta por los pagos (o pagada de más: el exceso es saldo a favor).
+        factura.saldo = 0
         factura.estado = EstadoFactura.PAGADA
     elif pagado > 0:
+        factura.saldo = saldo
         factura.estado = EstadoFactura.PAGADO_PARCIAL
     elif factura.estado == EstadoFactura.CREDITO:
         # Una factura ya marcada como crédito conserva ese estado al editarla.
+        factura.saldo = saldo
         factura.estado = EstadoFactura.CREDITO
     else:
+        factura.saldo = saldo
         factura.estado = EstadoFactura.ABIERTA
 
 
@@ -347,7 +336,7 @@ def agregar_item_factura(db: Session, factura_id: int, item_in: ItemFacturaCreat
         factura.detalles.append(detalle)
 
     _mover_stock(db, producto, -item_in.cantidad, usuario_id, f"Adición a Factura #{factura.id}")
-    _recalcular_factura(db, factura, usuario_id)
+    _recalcular_factura(db, factura)
 
     db.commit()
     db.refresh(factura)
@@ -416,7 +405,7 @@ def actualizar_item_factura(
         detalle.cantidad = item_in.cantidad
         detalle.subtotal = detalle.precio_unitario * detalle.cantidad
 
-    _recalcular_factura(db, factura, usuario_id)
+    _recalcular_factura(db, factura)
 
     db.commit()
     db.refresh(factura)
@@ -457,7 +446,7 @@ def eliminar_item_factura(db: Session, factura_id: int, detalle_id: int, usuario
 
     # No se borra la línea: se marca como retirada para conservar la traza.
     detalle.anulado = True
-    _recalcular_factura(db, factura, usuario_id)
+    _recalcular_factura(db, factura)
 
     db.commit()
     db.refresh(factura)
