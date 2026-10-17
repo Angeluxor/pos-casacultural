@@ -65,6 +65,8 @@ export function listarFacturasPaginado(params: {
   desde?: string
   hasta?: string
   estado?: EstadoFactura | ''
+  orden?: string
+  direccion?: string
 }): Promise<Pagina<Factura>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
@@ -73,6 +75,8 @@ export function listarFacturasPaginado(params: {
   if (params.desde) q.set('desde', params.desde)
   if (params.hasta) q.set('hasta', params.hasta)
   if (params.estado) q.set('estado', params.estado)
+  if (params.orden) q.set('orden', params.orden)
+  if (params.direccion) q.set('direccion', params.direccion)
   return apiFetch<Pagina<Factura>>(`/api/facturas/?${q.toString()}`)
 }
 

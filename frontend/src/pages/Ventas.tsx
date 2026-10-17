@@ -17,8 +17,10 @@ import { listarClientes, type Cliente } from '../api/clientes'
 import type { FormaPago } from '../api/types'
 import { Paginacion } from '../components/Paginacion'
 import { Stepper } from '../components/Stepper'
+import { ThOrdenable } from '../components/ThOrdenable'
 import { formatoFecha, moneda } from '../lib/formato'
 import { confirmarCierre } from '../lib/modal'
+import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
@@ -65,6 +67,7 @@ export function Ventas() {
     [estado],
   )
 
+  const { orden, direccion, alternar } = useOrdenServidor()
   const {
     datos,
     skip,
@@ -79,7 +82,7 @@ export function Ventas() {
     error,
     recargar,
     tamano,
-  } = usePaginacion(cargarFacturas, 30)
+  } = usePaginacion(cargarFacturas, 30, orden, direccion)
   const facturas = datos?.items ?? []
   const total = datos?.total ?? 0
   const hayFiltros = buscar.trim() !== '' || desde !== '' || hasta !== '' || estado !== ''
@@ -218,12 +221,36 @@ export function Ventas() {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th className="derecha">Total</th>
-                  <th className="derecha">Saldo</th>
-                  <th>Estado</th>
+                  <ThOrdenable campo="id" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    #
+                  </ThOrdenable>
+                  <ThOrdenable campo="fecha" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Fecha
+                  </ThOrdenable>
+                  <ThOrdenable campo="cliente" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Cliente
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="total"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Total
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="saldo"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Saldo
+                  </ThOrdenable>
+                  <ThOrdenable campo="estado" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Estado
+                  </ThOrdenable>
                   <th></th>
                 </tr>
               </thead>

@@ -13,6 +13,8 @@ import {
 } from '../api/productos'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { formatoFecha } from '../lib/formato'
@@ -29,8 +31,9 @@ export function Productos() {
   const esAdmin = usuario?.rol === 'Admin'
   const navigate = useNavigate()
 
+  const { orden, direccion, alternar } = useOrdenServidor()
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
-    usePaginacion(paginaProductos, 25)
+    usePaginacion(paginaProductos, 25, orden, direccion)
   const productos = datos?.items ?? []
   const total = datos?.total ?? 0
 
@@ -92,10 +95,30 @@ export function Productos() {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>Código</th>
-                  <th>Nombre</th>
-                  <th className="derecha">Precio</th>
-                  <th className="derecha">Stock</th>
+                  <ThOrdenable campo="codigo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Código
+                  </ThOrdenable>
+                  <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Nombre
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="precio"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Precio
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="stock"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Stock
+                  </ThOrdenable>
                   <th></th>
                 </tr>
               </thead>
@@ -373,10 +396,30 @@ function FormMovimiento({
   )
 }
 
+function cambioConSigno(m: KardexMovimiento): number {
+  if (m.tipo_movimiento === 'Ajuste') return m.cantidad
+  if (m.tipo_movimiento === 'Salida por Venta') return -Math.abs(m.cantidad)
+  return Math.abs(m.cantidad)
+}
+
+const ACCESORES_KARDEX: Accesores<KardexMovimiento> = {
+  fecha: (m) => m.fecha,
+  tipo: (m) => m.tipo_movimiento,
+  cambio: (m) => cambioConSigno(m),
+  stock: (m) => m.saldo_stock,
+  motivo: (m) => m.motivo ?? '',
+  referencia: (m) => m.referencia ?? '',
+}
+
 function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () => void }) {
   const [movs, setMovs] = useState<KardexMovimiento[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
+  const { items: movsOrdenados, orden, direccion, alternar } = useOrdenLocal(
+    movs,
+    ACCESORES_KARDEX,
+    { campo: 'fecha', direccion: 'desc' },
+  )
 
   useEffect(() => {
     let cancelado = false
@@ -395,12 +438,6 @@ function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () =
       cancelado = true
     }
   }, [producto.id])
-
-  function cambioConSigno(m: KardexMovimiento): number {
-    if (m.tipo_movimiento === 'Ajuste') return m.cantidad
-    if (m.tipo_movimiento === 'Salida por Venta') return -Math.abs(m.cantidad)
-    return Math.abs(m.cantidad)
-  }
 
   return (
     <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
@@ -422,16 +459,45 @@ function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () =
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>Fecha</th>
-                  <th>Tipo</th>
-                  <th className="derecha">Cambio</th>
-                  <th className="derecha">Stock</th>
-                  <th>Motivo</th>
-                  <th>Referencia</th>
+                  <ThOrdenable campo="fecha" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Fecha
+                  </ThOrdenable>
+                  <ThOrdenable campo="tipo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Tipo
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="cambio"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Cambio
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="stock"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Stock
+                  </ThOrdenable>
+                  <ThOrdenable campo="motivo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Motivo
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="referencia"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                  >
+                    Referencia
+                  </ThOrdenable>
                 </tr>
               </thead>
               <tbody>
-                {movs.map((m) => {
+                {movsOrdenados.map((m) => {
                   const cambio = cambioConSigno(m)
                   return (
                     <tr key={m.id}>

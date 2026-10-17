@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { formatoFecha, moneda } from '../lib/formato'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenLocal, type Accesores } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import {
   consultarCaja,
@@ -8,13 +10,65 @@ import {
   consultarTopProductos,
   consultarVentas,
   descargarReporte,
+  type FilaCartera,
+  type FilaCierreCaja,
+  type FilaInventario,
+  type FilaTopProducto,
   type ReporteCaja,
   type ReporteCartera,
   type ReporteInventario,
   type ReporteTopProductos,
   type ReporteVentas,
   type TipoReporte,
+  type VentaPorDia,
 } from '../api/reportes'
+
+const ACC_VENTAS_DIA: Accesores<VentaPorDia> = {
+  fecha: (d) => d.fecha,
+  facturas: (d) => d.facturas,
+  anuladas: (d) => d.anuladas,
+  total: (d) => d.total,
+  total_anulado: (d) => d.total_anulado,
+}
+
+const ACC_TOP_PRODUCTOS: Accesores<FilaTopProducto> = {
+  codigo: (i) => i.codigo,
+  nombre: (i) => i.nombre,
+  cantidad: (i) => i.cantidad,
+  precio_promedio: (i) => i.precio_promedio,
+  total: (i) => i.total,
+}
+
+const ACC_CARTERA: Accesores<FilaCartera> = {
+  nombre: (i) => i.nombre,
+  documento: (i) => i.documento ?? '',
+  facturas: (i) => i.facturas,
+  total: (i) => i.total,
+  pagado: (i) => i.pagado,
+  saldo: (i) => i.saldo,
+}
+
+const ACC_CAJA: Accesores<FilaCierreCaja> = {
+  id: (i) => i.id,
+  apertura: (i) => i.fecha_apertura,
+  cierre: (i) => i.fecha_cierre ?? '',
+  // Las columnas de dinero muestran dos cifras (efectivo y banco): se ordena
+  // por su suma.
+  inicial: (i) => i.saldo_inicial_efectivo + i.saldo_inicial_banco,
+  entradas: (i) => i.entradas_efectivo + i.entradas_banco,
+  salidas: (i) => i.salidas_efectivo + i.salidas_banco,
+  esperado: (i) => i.esperado_efectivo + i.esperado_banco,
+  real: (i) => (i.saldo_final_efectivo ?? 0) + (i.saldo_final_banco ?? 0),
+  diferencia: (i) => (i.diferencia_efectivo ?? 0) + (i.diferencia_banco ?? 0),
+}
+
+const ACC_INVENTARIO: Accesores<FilaInventario> = {
+  codigo: (i) => i.codigo,
+  nombre: (i) => i.nombre,
+  precio: (i) => i.precio,
+  stock: (i) => i.stock,
+  valor: (i) => i.valor,
+}
 
 const TABS: { id: TipoReporte; label: string; conFechas: boolean }[] = [
   { id: 'ventas', label: 'Ventas', conFechas: true },
@@ -243,6 +297,10 @@ function VentasReporte({ conFechas, desde, hasta }: VistaProps) {
   const { datos, cargando, error } = useReporte<ReporteVentas>(() =>
     consultarVentas(conFechas ? desde : undefined, conFechas ? hasta : undefined),
   )
+  const { items: dias, orden, direccion, alternar } = useOrdenLocal(
+    datos?.por_dia ?? [],
+    ACC_VENTAS_DIA,
+  )
   return (
     <>
       <BotonesExportar tipo="ventas" conFechas={conFechas} desde={desde} hasta={hasta} disabled={cargando} />
@@ -261,15 +319,25 @@ function VentasReporte({ conFechas, desde, hasta }: VistaProps) {
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th className="derecha">Facturas</th>
-                    <th className="derecha">Anuladas</th>
-                    <th className="derecha">Total</th>
-                    <th className="derecha">Total anulado</th>
+                    <ThOrdenable campo="fecha" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Fecha
+                    </ThOrdenable>
+                    <ThOrdenable campo="facturas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Facturas
+                    </ThOrdenable>
+                    <ThOrdenable campo="anuladas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Anuladas
+                    </ThOrdenable>
+                    <ThOrdenable campo="total" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Total
+                    </ThOrdenable>
+                    <ThOrdenable campo="total_anulado" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Total anulado
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.por_dia.map((d) => (
+                  {dias.map((d) => (
                     <tr key={d.fecha}>
                       <td>{formatoFecha(d.fecha)}</td>
                       <td className="derecha">{d.facturas}</td>
@@ -292,6 +360,10 @@ function TopReporte({ conFechas, desde, hasta }: VistaProps) {
   const { datos, cargando, error } = useReporte<ReporteTopProductos>(() =>
     consultarTopProductos(conFechas ? desde : undefined, conFechas ? hasta : undefined),
   )
+  const { items: productos, orden, direccion, alternar } = useOrdenLocal(
+    datos?.items ?? [],
+    ACC_TOP_PRODUCTOS,
+  )
   return (
     <>
       <BotonesExportar tipo="top-productos" conFechas={conFechas} desde={desde} hasta={hasta} disabled={cargando} />
@@ -309,15 +381,25 @@ function TopReporte({ conFechas, desde, hasta }: VistaProps) {
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Código</th>
-                    <th>Producto</th>
-                    <th className="derecha">Cantidad</th>
-                    <th className="derecha">Precio promedio</th>
-                    <th className="derecha">Total vendido</th>
+                    <ThOrdenable campo="codigo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Código
+                    </ThOrdenable>
+                    <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Producto
+                    </ThOrdenable>
+                    <ThOrdenable campo="cantidad" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Cantidad
+                    </ThOrdenable>
+                    <ThOrdenable campo="precio_promedio" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Precio promedio
+                    </ThOrdenable>
+                    <ThOrdenable campo="total" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Total vendido
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.items.map((i, pos) => (
+                  {productos.map((i, pos) => (
                     <tr key={`${i.codigo}-${pos}`}>
                       <td>{i.codigo}</td>
                       <td>{i.nombre}</td>
@@ -338,6 +420,10 @@ function TopReporte({ conFechas, desde, hasta }: VistaProps) {
 
 function CarteraReporte() {
   const { datos, cargando, error } = useReporte<ReporteCartera>(consultarCartera)
+  const { items: clientes, orden, direccion, alternar } = useOrdenLocal(
+    datos?.items ?? [],
+    ACC_CARTERA,
+  )
   return (
     <>
       <BotonesExportar tipo="cartera" conFechas={false} disabled={cargando} />
@@ -354,16 +440,28 @@ function CarteraReporte() {
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Cliente</th>
-                    <th>Documento</th>
-                    <th className="derecha">Facturas</th>
-                    <th className="derecha">Total</th>
-                    <th className="derecha">Pagado</th>
-                    <th className="derecha">Saldo</th>
+                    <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Cliente
+                    </ThOrdenable>
+                    <ThOrdenable campo="documento" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Documento
+                    </ThOrdenable>
+                    <ThOrdenable campo="facturas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Facturas
+                    </ThOrdenable>
+                    <ThOrdenable campo="total" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Total
+                    </ThOrdenable>
+                    <ThOrdenable campo="pagado" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Pagado
+                    </ThOrdenable>
+                    <ThOrdenable campo="saldo" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Saldo
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.items.map((i) => (
+                  {clientes.map((i) => (
                     <tr key={i.cliente_id}>
                       <td>{i.nombre}</td>
                       <td>{i.documento ?? '—'}</td>
@@ -390,6 +488,10 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
   const difEfectivo = datos ? datos.diferencia_efectivo_total : 0
   const difBanco = datos ? datos.diferencia_banco_total : 0
   const cuadrada = difEfectivo === 0 && difBanco === 0
+  const { items: turnos, orden, direccion, alternar } = useOrdenLocal(
+    datos?.items ?? [],
+    ACC_CAJA,
+  )
   return (
     <>
       <BotonesExportar tipo="caja" conFechas={conFechas} desde={desde} hasta={hasta} disabled={cargando} />
@@ -419,18 +521,34 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Turno</th>
-                    <th>Apertura</th>
-                    <th>Inicial (Ef · Ban)</th>
-                    <th className="derecha">Entradas</th>
-                    <th className="derecha">Salidas</th>
-                    <th className="derecha">Esperado</th>
-                    <th className="derecha">Real</th>
-                    <th className="derecha">Diferencia</th>
+                    <ThOrdenable campo="id" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Turno
+                    </ThOrdenable>
+                    <ThOrdenable campo="apertura" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Apertura
+                    </ThOrdenable>
+                    <ThOrdenable campo="inicial" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Inicial (Ef · Ban)
+                    </ThOrdenable>
+                    <ThOrdenable campo="entradas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Entradas
+                    </ThOrdenable>
+                    <ThOrdenable campo="salidas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Salidas
+                    </ThOrdenable>
+                    <ThOrdenable campo="esperado" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Esperado
+                    </ThOrdenable>
+                    <ThOrdenable campo="real" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Real
+                    </ThOrdenable>
+                    <ThOrdenable campo="diferencia" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Diferencia
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.items.map((i) => {
+                  {turnos.map((i) => {
                     const cuadradaFila =
                       (i.diferencia_efectivo ?? 0) === 0 && (i.diferencia_banco ?? 0) === 0
                     const hayReal = i.saldo_final_efectivo !== null || i.saldo_final_banco !== null
@@ -479,6 +597,10 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
 
 function InventarioReporte() {
   const { datos, cargando, error } = useReporte<ReporteInventario>(consultarInventario)
+  const { items: productos, orden, direccion, alternar } = useOrdenLocal(
+    datos?.items ?? [],
+    ACC_INVENTARIO,
+  )
   return (
     <>
       <BotonesExportar tipo="inventario" conFechas={false} disabled={cargando} />
@@ -496,15 +618,25 @@ function InventarioReporte() {
               <table className="tabla">
                 <thead>
                   <tr>
-                    <th>Código</th>
-                    <th>Producto</th>
-                    <th className="derecha">Precio</th>
-                    <th className="derecha">Stock</th>
-                    <th className="derecha">Valor</th>
+                    <ThOrdenable campo="codigo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Código
+                    </ThOrdenable>
+                    <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Producto
+                    </ThOrdenable>
+                    <ThOrdenable campo="precio" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Precio
+                    </ThOrdenable>
+                    <ThOrdenable campo="stock" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Stock
+                    </ThOrdenable>
+                    <ThOrdenable campo="valor" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Valor
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.items.map((i) => (
+                  {productos.map((i) => (
                     <tr key={i.id}>
                       <td>{i.codigo}</td>
                       <td>{i.nombre}</td>

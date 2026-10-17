@@ -1,0 +1,17 @@
+# Normaliza los finales de línea a LF en todo el repositorio.
+# Sin esto, un editor/IDE en Windows guarda los archivos en CRLF y Git marca
+# cada línea como modificada aunque el contenido no haya cambiado.
+* text=auto eol=lf
+
+# Archivos binarios: nunca convertir finales de línea.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.zip binary
+*.woff binary
+*.woff2 binary

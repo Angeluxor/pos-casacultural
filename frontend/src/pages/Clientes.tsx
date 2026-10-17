@@ -8,6 +8,8 @@ import {
 } from '../api/clientes'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
@@ -16,8 +18,9 @@ export function Clientes() {
   const { usuario } = useAuth()
   const esAdmin = usuario?.rol === 'Admin'
 
+  const { orden, direccion, alternar } = useOrdenServidor()
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
-    usePaginacion(paginaClientes, 25)
+    usePaginacion(paginaClientes, 25, orden, direccion)
   const clientes = datos?.items ?? []
   const total = datos?.total ?? 0
   const [errorAccion, setErrorAccion] = useState('')
@@ -80,9 +83,15 @@ export function Clientes() {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>Nombre</th>
-                  <th>Celular</th>
-                  <th>Correo</th>
+                  <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Nombre
+                  </ThOrdenable>
+                  <ThOrdenable campo="celular" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Celular
+                  </ThOrdenable>
+                  <ThOrdenable campo="correo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Correo
+                  </ThOrdenable>
                   <th></th>
                 </tr>
               </thead>

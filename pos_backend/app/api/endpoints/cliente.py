@@ -20,8 +20,8 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db), current
     return crud_cliente.crear_cliente(db=db, cliente=cliente)
 
 @router.get("/", response_model=Pagina[ClienteResponse])
-def leer_clientes(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    total, items = crud_cliente.obtener_clientes(db, skip=skip, limit=limit, buscar=buscar)
+def leer_clientes(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, orden: Optional[str] = None, direccion: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+    total, items = crud_cliente.obtener_clientes(db, skip=skip, limit=limit, buscar=buscar, orden=orden, direccion=direccion)
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)

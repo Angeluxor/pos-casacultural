@@ -72,10 +72,18 @@ export type IngresoUpdate = {
 export function paginaIngresos(params: {
   skip: number
   limit: number
+  desde?: string
+  hasta?: string
+  orden?: string
+  direccion?: string
 }): Promise<Pagina<Ingreso>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
+  if (params.desde) q.set('desde', params.desde)
+  if (params.hasta) q.set('hasta', params.hasta)
+  if (params.orden) q.set('orden', params.orden)
+  if (params.direccion) q.set('direccion', params.direccion)
   return apiFetch<Pagina<Ingreso>>(`/api/ingresos/?${q.toString()}`)
 }
 

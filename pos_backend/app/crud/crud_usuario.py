@@ -7,6 +7,7 @@ from app.db.models import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, PerfilUpdate, PasswordUpdate
 from app.core.security import get_password_hash, verify_password
 from app.core.config import PASSWORD_MIN_LENGTH
+from app.core.orden import ordenar
 
 
 def _validar_password(password: str) -> None:
@@ -39,13 +40,37 @@ def authenticate(db: Session, username: str, password: str):
 def get_usuario(db: Session, user_id: int):
     return db.query(Usuario).filter(Usuario.id == user_id).first()
 
-def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100, buscar: Optional[str] = None):
+def obtener_usuarios(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    buscar: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
+):
     query = db.query(Usuario)
     if buscar:
         filtro = f"%{buscar.strip()}%"
         query = query.filter(Usuario.username.ilike(filtro) | Usuario.nombre.ilike(filtro))
     total = query.count()
-    items = query.order_by(Usuario.username).offset(skip).limit(limit).all()
+    items = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            {
+                "username": Usuario.username,
+                "nombre": Usuario.nombre,
+                "rol": Usuario.rol,
+                "activo": Usuario.activo,
+            },
+            [Usuario.username.asc(), Usuario.id.asc()],
+            desempate=Usuario.id.asc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, items
 
 def crear_usuario(db: Session, usuario: UsuarioCreate):

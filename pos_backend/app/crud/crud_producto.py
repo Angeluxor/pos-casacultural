@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from typing import Optional
 from app.db.models import Producto, Kardex, TipoMovimientoInventario
 from app.schemas.producto import ProductoCreate, ProductoUpdate, KardexCreate
+from app.core.orden import ordenar
 
 def obtener_producto_por_codigo(db: Session, codigo: str):
     return db.query(Producto).filter(Producto.codigo == codigo).first()
@@ -10,13 +11,37 @@ def obtener_producto_por_codigo(db: Session, codigo: str):
 def obtener_producto(db: Session, producto_id: int):
     return db.query(Producto).filter(Producto.id == producto_id).first()
 
-def obtener_productos(db: Session, skip: int = 0, limit: int = 100, buscar: Optional[str] = None):
+def obtener_productos(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    buscar: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
+):
     query = db.query(Producto)
     if buscar:
         filtro = f"%{buscar.strip()}%"
         query = query.filter(Producto.codigo.ilike(filtro) | Producto.nombre.ilike(filtro))
     total = query.count()
-    items = query.order_by(Producto.nombre).offset(skip).limit(limit).all()
+    items = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            {
+                "codigo": Producto.codigo,
+                "nombre": Producto.nombre,
+                "precio": Producto.precio,
+                "stock": Producto.stock,
+            },
+            [Producto.nombre.asc(), Producto.id.asc()],
+            desempate=Producto.id.asc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, items
 
 def registrar_kardex(db: Session, producto_id: int, kardex_data: KardexCreate, usuario_id: int):

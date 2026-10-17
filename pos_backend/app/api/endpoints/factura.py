@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func
 from typing import Optional
 from datetime import date, datetime, time, timedelta
 
@@ -19,6 +20,7 @@ from app.schemas.common import Pagina
 from app.crud import crud_factura
 from app.db.models import Factura
 from app.core.timezone import BOGOTA_TZ
+from app.core.orden import ordenar
 
 router = APIRouter()
 
@@ -39,14 +41,18 @@ def listar_facturas(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     estado: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     query = db.query(Factura).options(selectinload(Factura.detalles), selectinload(Factura.pagos))
+    # Necesitamos la tabla clientes si se busca por nombre o se ordena por cliente.
+    if buscar or orden == "cliente":
+        query = query.join(Cliente, Factura.cliente_id == Cliente.id, isouter=True)
     if buscar:
         q = buscar.strip()
         filtro = f"%{q}%"
-        query = query.join(Cliente, Factura.cliente_id == Cliente.id, isouter=True)
         cond = Cliente.nombre.ilike(filtro)
         if q.isdigit():
             try:
@@ -72,7 +78,27 @@ def listar_facturas(
         except ValueError:
             pass
     total = query.count()
-    items = query.order_by(Factura.id.desc()).offset(skip).limit(limit).all()
+    items = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            {
+                "id": Factura.id,
+                "fecha": Factura.fecha,
+                # El nombre a mostrar es el eventual si existe; si no, el del cliente.
+                "cliente": func.coalesce(Factura.nombre_eventual, Cliente.nombre),
+                "total": Factura.total,
+                "saldo": Factura.saldo,
+                "estado": Factura.estado,
+            },
+            [Factura.id.desc()],
+            desempate=Factura.id.desc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.get("/{factura_id}", response_model=FacturaResponse)

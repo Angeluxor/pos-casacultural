@@ -9,6 +9,8 @@ import {
 import type { RolUsuario, Usuario } from '../api/types'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
@@ -18,8 +20,9 @@ const ROLES: RolUsuario[] = ['Admin', 'Cajero']
 export function Usuarios() {
   const { usuario: actual } = useAuth()
 
+  const { orden, direccion, alternar } = useOrdenServidor()
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
-    usePaginacion(paginaUsuarios, 25)
+    usePaginacion(paginaUsuarios, 25, orden, direccion)
   const usuarios = datos?.items ?? []
   const total = datos?.total ?? 0
 
@@ -86,10 +89,18 @@ export function Usuarios() {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>Usuario</th>
-                  <th>Nombre</th>
-                  <th>Rol</th>
-                  <th>Estado</th>
+                  <ThOrdenable campo="username" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Usuario
+                  </ThOrdenable>
+                  <ThOrdenable campo="nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Nombre
+                  </ThOrdenable>
+                  <ThOrdenable campo="rol" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Rol
+                  </ThOrdenable>
+                  <ThOrdenable campo="activo" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Estado
+                  </ThOrdenable>
                   <th></th>
                 </tr>
               </thead>

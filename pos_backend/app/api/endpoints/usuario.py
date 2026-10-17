@@ -19,8 +19,8 @@ def crear_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db), current
     return crud_usuario.crear_usuario(db=db, usuario=usuario)
 
 @router.get("/", response_model=Pagina[UsuarioResponse])
-def leer_usuarios(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
-    total, items = crud_usuario.obtener_usuarios(db, skip=skip, limit=limit, buscar=buscar)
+def leer_usuarios(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, orden: Optional[str] = None, direccion: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
+    total, items = crud_usuario.obtener_usuarios(db, skip=skip, limit=limit, buscar=buscar, orden=orden, direccion=direccion)
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.get("/{user_id}", response_model=UsuarioResponse)

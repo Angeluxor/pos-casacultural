@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy import func
 from fastapi import HTTPException
 from app.db.models import (
@@ -9,9 +9,11 @@ from app.db.models import (
     FormaPago,
     Factura,
     EstadoFactura,
+    Usuario,
 )
 from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate, TurnoCajaHistorial
 from app.core.timezone import get_colombia_time, BOGOTA_TZ
+from app.core.orden import ordenar
 
 # El bolsillo "banco" agrupa todo lo que no entra al cajón físico.
 FORMAS_BANCO = {FormaPago.TRANSFERENCIA, FormaPago.TARJETA, FormaPago.OTRO}
@@ -186,6 +188,8 @@ def obtener_turnos(
     desde: str | None = None,
     hasta: str | None = None,
     incluir_abierta: bool = False,
+    orden: str | None = None,
+    direccion: str | None = None,
 ):
     query = db.query(TurnoCaja)
     if not incluir_abierta:
@@ -208,8 +212,40 @@ def obtener_turnos(
         except ValueError:
             pass
 
+    columnas = {
+        "id": TurnoCaja.id,
+        "apertura": TurnoCaja.fecha_apertura,
+        "cierre": TurnoCaja.fecha_cierre,
+    }
+    # Ordenar por "Abrió"/"Cerró" exige unir la tabla usuarios (con alias, porque
+    # hay dos referencias al mismo modelo).
+    if orden == "abrio":
+        usuario_apertura = aliased(Usuario)
+        query = query.outerjoin(
+            usuario_apertura, TurnoCaja.usuario_apertura_id == usuario_apertura.id
+        )
+        columnas["abrio"] = usuario_apertura.nombre
+    elif orden == "cerro":
+        usuario_cierre = aliased(Usuario)
+        query = query.outerjoin(
+            usuario_cierre, TurnoCaja.usuario_cierre_id == usuario_cierre.id
+        )
+        columnas["cerro"] = usuario_cierre.nombre
+
     total = query.count()
-    turnos = query.order_by(TurnoCaja.id.desc()).offset(skip).limit(limit).all()
+    turnos = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            columnas,
+            [TurnoCaja.id.desc()],
+            desempate=TurnoCaja.id.desc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     resultado: list[TurnoCajaHistorial] = []
     for t in turnos:

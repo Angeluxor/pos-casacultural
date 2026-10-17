@@ -18,6 +18,8 @@ import type { FormaPago } from '../api/types'
 import { formatoFecha, moneda } from '../lib/formato'
 import { confirmarCierre } from '../lib/modal'
 import { Paginacion } from '../components/Paginacion'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
 import { usePaginacion } from '../lib/usePaginacion'
 import { Vacio } from '../components/Vacio'
 
@@ -25,6 +27,14 @@ import { Vacio } from '../components/Vacio'
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
 
 type Bucket = 'efectivo' | 'banco'
+
+const ACCESORES_MOVIMIENTOS: Accesores<RegistroCaja> = {
+  fecha: (m) => m.fecha,
+  tipo: (m) => m.tipo,
+  referencia: (m) => m.referencia,
+  forma_pago: (m) => m.forma_pago ?? '',
+  monto: (m) => m.monto,
+}
 
 function bucketDe(forma_pago: FormaPago): Bucket {
   return esFormaBanco(forma_pago) ? 'banco' : 'efectivo'
@@ -81,6 +91,11 @@ export function Caja() {
     (turno?.saldo_inicial_efectivo ?? 0) + entradas.efectivo - salidas.efectivo
   const esperadoBanco =
     (turno?.saldo_inicial_banco ?? 0) + entradas.banco - salidas.banco
+
+  const movsOrdenados = useOrdenLocal(movimientos, ACCESORES_MOVIMIENTOS, {
+    campo: 'fecha',
+    direccion: 'desc',
+  })
 
   if (cargando) return <p className="ayuda">Cargando…</p>
 
@@ -172,15 +187,31 @@ export function Caja() {
               <table className="tabla tabla--cards">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Referencia</th>
-                    <th>Forma de pago</th>
-                    <th className="derecha">Monto</th>
+                    <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                      Fecha
+                    </ThOrdenable>
+                    <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                      Tipo
+                    </ThOrdenable>
+                    <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                      Referencia
+                    </ThOrdenable>
+                    <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                      Forma de pago
+                    </ThOrdenable>
+                    <ThOrdenable
+                      campo="monto"
+                      orden={movsOrdenados.orden}
+                      direccion={movsOrdenados.direccion}
+                      onOrdenar={movsOrdenados.alternar}
+                      className="derecha"
+                    >
+                      Monto
+                    </ThOrdenable>
                   </tr>
                 </thead>
                 <tbody>
-                  {movimientos.map((m) => (
+                  {movsOrdenados.items.map((m) => (
                     <tr key={m.id}>
                       <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
                       <td data-label="Tipo">
@@ -584,19 +615,29 @@ function FormCerrar({
 }
 
 function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
+  const { orden, direccion, alternar } = useOrdenServidor()
   const cargar = useCallback(
-    (params: { skip: number; limit: number; desde?: string; hasta?: string }) =>
+    (params: {
+      skip: number
+      limit: number
+      desde?: string
+      hasta?: string
+      orden?: string
+      direccion?: 'asc' | 'desc'
+    }) =>
       listarTurnos({
         skip: params.skip,
         limit: params.limit,
         desde: params.desde,
         hasta: params.hasta,
+        orden: params.orden,
+        direccion: params.direccion,
       }),
     [],
   )
 
   const { datos, skip, setSkip, desde, setDesde, hasta, setHasta, cargando, error, tamano } =
-    usePaginacion(cargar)
+    usePaginacion(cargar, 25, orden, direccion)
 
   const [seleccion, setSeleccion] = useState<TurnoCajaHistorial | null>(null)
   const [movs, setMovs] = useState<RegistroCaja[]>([])
@@ -625,6 +666,10 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
   }, [seleccion])
 
   const items = datos?.items ?? []
+  const movsOrdenados = useOrdenLocal(movs, ACCESORES_MOVIMIENTOS, {
+    campo: 'fecha',
+    direccion: 'desc',
+  })
 
   return (
     <div className="modal-overlay modal-overlay--full" onClick={onCerrar}>
@@ -655,11 +700,21 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>Turno</th>
-                  <th>Apertura</th>
-                  <th>Cierre</th>
-                  <th>Abrió</th>
-                  <th>Cerró</th>
+                  <ThOrdenable campo="id" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Turno
+                  </ThOrdenable>
+                  <ThOrdenable campo="apertura" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Apertura
+                  </ThOrdenable>
+                  <ThOrdenable campo="cierre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Cierre
+                  </ThOrdenable>
+                  <ThOrdenable campo="abrio" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Abrió
+                  </ThOrdenable>
+                  <ThOrdenable campo="cerro" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Cerró
+                  </ThOrdenable>
                   <th className="derecha">Esperado (Ef / Ban)</th>
                   <th className="derecha">Real (Ef / Ban)</th>
                   <th className="derecha">Diferencia (Ef / Ban)</th>
@@ -746,15 +801,31 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
                 <table className="tabla tabla--cards">
                   <thead>
                     <tr>
-                      <th>Fecha</th>
-                      <th>Tipo</th>
-                      <th>Referencia</th>
-                      <th>Forma de pago</th>
-                      <th className="derecha">Monto</th>
+                      <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                        Fecha
+                      </ThOrdenable>
+                      <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                        Tipo
+                      </ThOrdenable>
+                      <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                        Referencia
+                      </ThOrdenable>
+                      <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                        Forma de pago
+                      </ThOrdenable>
+                      <ThOrdenable
+                        campo="monto"
+                        orden={movsOrdenados.orden}
+                        direccion={movsOrdenados.direccion}
+                        onOrdenar={movsOrdenados.alternar}
+                        className="derecha"
+                      >
+                        Monto
+                      </ThOrdenable>
                     </tr>
                   </thead>
                   <tbody>
-                    {movs.map((m) => (
+                    {movsOrdenados.items.map((m) => (
                       <tr key={m.id}>
                         <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
                         <td data-label="Tipo">{m.tipo}</td>

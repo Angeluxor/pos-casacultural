@@ -110,11 +110,15 @@ export function listarTurnos(params: {
   limit: number
   desde?: string
   hasta?: string
+  orden?: string
+  direccion?: string
 }): Promise<Pagina<TurnoCajaHistorial>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
   if (params.desde) q.set('desde', params.desde)
   if (params.hasta) q.set('hasta', params.hasta)
+  if (params.orden) q.set('orden', params.orden)
+  if (params.direccion) q.set('direccion', params.direccion)
   return apiFetch<Pagina<TurnoCajaHistorial>>(`/api/caja/turnos?${q.toString()}`)
 }

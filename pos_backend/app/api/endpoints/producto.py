@@ -19,8 +19,8 @@ def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db), curr
     return crud_producto.crear_producto(db=db, producto=producto, usuario_id=current_user.id)
 
 @router.get("/", response_model=Pagina[ProductoResponse])
-def leer_productos(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    total, items = crud_producto.obtener_productos(db, skip=skip, limit=limit, buscar=buscar)
+def leer_productos(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, orden: Optional[str] = None, direccion: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+    total, items = crud_producto.obtener_productos(db, skip=skip, limit=limit, buscar=buscar, orden=orden, direccion=direccion)
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.get("/{producto_id}", response_model=ProductoResponse)

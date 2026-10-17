@@ -15,6 +15,8 @@ import {
 import { listarProductos, type Producto } from '../api/productos'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
+import { ThOrdenable } from '../components/ThOrdenable'
+import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { formatoFecha, moneda } from '../lib/formato'
@@ -31,9 +33,12 @@ export function Ingresos() {
   const esAdmin = usuario?.rol === 'Admin'
   const [params, setParams] = useSearchParams()
 
+  const { orden, direccion, alternar } = useOrdenServidor()
   const { datos, skip, setSkip, cargando, error, recargar, tamano } = usePaginacion(
     paginaIngresos,
     20,
+    orden,
+    direccion,
   )
   const ingresos = datos?.items ?? []
   const total = datos?.total ?? 0
@@ -76,13 +81,41 @@ export function Ingresos() {
             <table className="tabla tabla--cards">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Fecha</th>
-                  <th>Proveedor</th>
-                  <th>Forma de pago</th>
-                  <th className="derecha">Total</th>
+                  <ThOrdenable campo="id" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    #
+                  </ThOrdenable>
+                  <ThOrdenable campo="fecha" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Fecha
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="proveedor"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                  >
+                    Proveedor
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="forma_pago"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                  >
+                    Forma de pago
+                  </ThOrdenable>
+                  <ThOrdenable
+                    campo="total"
+                    orden={orden}
+                    direccion={direccion}
+                    onOrdenar={alternar}
+                    className="derecha"
+                  >
+                    Total
+                  </ThOrdenable>
                   <th className="derecha">Suma ítems</th>
-                  <th>Estado</th>
+                  <ThOrdenable campo="estado" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                    Estado
+                  </ThOrdenable>
                   <th></th>
                 </tr>
               </thead>

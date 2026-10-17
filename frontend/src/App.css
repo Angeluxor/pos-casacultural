@@ -393,6 +393,38 @@ select:focus {
   font-weight: 600;
 }
 
+.th-orden {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.th-orden:hover {
+  color: var(--texto);
+}
+
+.th-orden--activo {
+  color: var(--texto);
+}
+
+.th-orden__flecha {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.55;
+}
+
+.th-orden--activo .th-orden__flecha {
+  opacity: 1;
+}
+
 .tabla tbody tr:last-child td {
   border-bottom: none;
 }

@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.timezone import BOGOTA_TZ
+from app.core.orden import ordenar
 from app.db.models import (
     EstadoIngreso,
     FormaPago,
@@ -232,6 +233,8 @@ def obtener_ingresos(
     limit: int = 20,
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
 ):
     query = db.query(IngresoInventario)
     if desde:
@@ -253,5 +256,24 @@ def obtener_ingresos(
             pass
 
     total = query.count()
-    items = query.order_by(IngresoInventario.id.desc()).offset(skip).limit(limit).all()
+    items = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            {
+                "id": IngresoInventario.id,
+                "fecha": IngresoInventario.fecha,
+                "proveedor": IngresoInventario.proveedor,
+                "forma_pago": IngresoInventario.forma_pago,
+                "total": IngresoInventario.total,
+                "estado": IngresoInventario.estado,
+            },
+            [IngresoInventario.id.desc()],
+            desempate=IngresoInventario.id.desc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, items

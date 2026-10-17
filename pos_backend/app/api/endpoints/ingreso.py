@@ -32,11 +32,13 @@ def listar_ingresos(
     limit: int = 20,
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     total, items = crud_ingreso.obtener_ingresos(
-        db=db, skip=skip, limit=limit, desde=desde, hasta=hasta
+        db=db, skip=skip, limit=limit, desde=desde, hasta=hasta, orden=orden, direccion=direccion
     )
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 

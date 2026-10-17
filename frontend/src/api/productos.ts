@@ -61,11 +61,15 @@ export function paginaProductos(params: {
   skip: number
   limit: number
   buscar?: string
+  orden?: string
+  direccion?: string
 }): Promise<Pagina<Producto>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
   if (params.buscar) q.set('buscar', params.buscar)
+  if (params.orden) q.set('orden', params.orden)
+  if (params.direccion) q.set('direccion', params.direccion)
   return apiFetch<Pagina<Producto>>(`/api/productos/?${q.toString()}`)
 }
 

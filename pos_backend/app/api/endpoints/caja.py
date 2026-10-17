@@ -33,6 +33,8 @@ def listar_turnos(
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
     incluir_abierta: bool = False,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -43,6 +45,8 @@ def listar_turnos(
         desde=desde,
         hasta=hasta,
         incluir_abierta=incluir_abierta,
+        orden=orden,
+        direccion=direccion,
     )
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 

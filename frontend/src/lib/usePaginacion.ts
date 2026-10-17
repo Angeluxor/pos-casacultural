@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Pagina } from '../api/types'
+import type { Direccion } from './orden'
 
 export type CargarPagina<T> = (params: {
   skip: number
@@ -7,9 +8,16 @@ export type CargarPagina<T> = (params: {
   buscar: string
   desde?: string
   hasta?: string
+  orden?: string
+  direccion?: Direccion
 }) => Promise<Pagina<T>>
 
-export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
+export function usePaginacion<T>(
+  cargar: CargarPagina<T>,
+  tamano = 25,
+  orden?: string,
+  direccion?: Direccion,
+) {
   const [datos, setDatos] = useState<Pagina<T> | null>(null)
   const [skip, setSkip] = useState(0)
   const [buscar, setBuscar] = useState('')
@@ -30,7 +38,7 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
 
   useEffect(() => {
     setSkip(0)
-  }, [desde, hasta])
+  }, [desde, hasta, orden, direccion])
 
   useEffect(() => {
     let cancelado = false
@@ -41,6 +49,8 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
       buscar: buscarAplicado,
       desde: desde || undefined,
       hasta: hasta || undefined,
+      orden,
+      direccion,
     })
       .then((p) => {
         if (cancelado) return
@@ -57,7 +67,7 @@ export function usePaginacion<T>(cargar: CargarPagina<T>, tamano = 25) {
     return () => {
       cancelado = true
     }
-  }, [cargar, skip, buscarAplicado, desde, hasta, tamano, version])
+  }, [cargar, skip, buscarAplicado, desde, hasta, tamano, version, orden, direccion])
 
   const recargar = useCallback(() => setVersion((v) => v + 1), [])
 

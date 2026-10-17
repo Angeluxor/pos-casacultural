@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from typing import Optional
 from app.db.models import Cliente, Factura
 from app.schemas.cliente import ClienteCreate, ClienteUpdate
+from app.core.orden import ordenar
 
 # Nombre del registro genérico que reemplaza al antiguo "Consumidor final".
 CLIENTE_EVENTUAL_NOMBRE = "Cliente eventual"
@@ -31,7 +32,14 @@ def obtener_cliente(db: Session, cliente_id: int):
     return db.query(Cliente).filter(Cliente.id == cliente_id).first()
 
 
-def obtener_clientes(db: Session, skip: int = 0, limit: int = 100, buscar: Optional[str] = None):
+def obtener_clientes(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    buscar: Optional[str] = None,
+    orden: Optional[str] = None,
+    direccion: Optional[str] = None,
+):
     # El cliente eventual es un registro de sistema: no se lista ni se elige.
     query = db.query(Cliente).filter(Cliente.es_eventual == False)
     if buscar:
@@ -43,7 +51,24 @@ def obtener_clientes(db: Session, skip: int = 0, limit: int = 100, buscar: Optio
             | Cliente.correo.ilike(filtro)
         )
     total = query.count()
-    items = query.order_by(Cliente.nombre).offset(skip).limit(limit).all()
+    items = (
+        ordenar(
+            query,
+            orden,
+            direccion,
+            {
+                "nombre": Cliente.nombre,
+                "documento": Cliente.documento,
+                "celular": Cliente.celular,
+                "correo": Cliente.correo,
+            },
+            [Cliente.nombre.asc(), Cliente.id.asc()],
+            desempate=Cliente.id.asc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return total, items
 
 
