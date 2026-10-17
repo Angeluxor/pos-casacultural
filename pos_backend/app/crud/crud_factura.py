@@ -84,57 +84,69 @@ def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
     return db_factura
 
 
-def registrar_pago_factura(db: Session, factura_id: int, pago_in: PagoCreate, cajero_id: int):
+def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate], cajero_id: int):
+    """Registra uno o varios pagos (medios de pago combinados) sobre una factura."""
+    if not pagos:
+        raise HTTPException(status_code=400, detail="Debe registrar al menos un pago.")
+
     # 1. Verificar si hay Caja Abierta
     caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
     if not caja_abierta:
         raise HTTPException(status_code=400, detail="No se pueden registrar pagos. No hay una caja abierta actualmente.")
-        
+
     # 2. Buscar factura (con bloqueo de fila)
     factura = db.query(Factura).filter(Factura.id == factura_id).with_for_update().first()
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
-        
+
     if factura.estado in [EstadoFactura.PAGADA, EstadoFactura.ANULADA]:
         db.rollback()
         raise HTTPException(status_code=400, detail="La factura ya se encuentra pagada o está anulada.")
-        
-    if pago_in.valor > factura.saldo:
+
+    for pago in pagos:
+        if pago.valor <= 0:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a 0.")
+
+    total = round(sum(pago.valor for pago in pagos), 2)
+    if total > factura.saldo:
         db.rollback()
-        raise HTTPException(status_code=400, detail=f"El valor del pago ({pago_in.valor}) excede el saldo pendiente ({factura.saldo})")
-        
-    # 3. Registrar el Pago
-    db_pago = Pago(
-        factura_id=factura.id,
-        cajero_id=cajero_id,
-        valor=pago_in.valor,
-        forma_pago=pago_in.forma_pago
-    )
-    db.add(db_pago)
-    
-    # 4. Registrar en Caja (Entrada de dinero)
-    db_registro_caja = RegistroCaja(
-        turno_caja_id=caja_abierta.id,
-        usuario_id=cajero_id,
-        tipo=TipoMovimientoCaja.ENTRADA,
-        referencia=f"Abono a Factura #{factura.id}",
-        forma_pago=pago_in.forma_pago,
-        monto=pago_in.valor,
-        observacion="Cobro de ventas"
-    )
-    db.add(db_registro_caja)
-    
-    # 5. Actualizar Saldos y Estados
-    factura.saldo -= pago_in.valor
+        raise HTTPException(status_code=400, detail=f"El valor total de los pagos ({total}) excede el saldo pendiente ({factura.saldo})")
+
+    # 3. Registrar cada pago y su entrada de caja
+    for pago in pagos:
+        db.add(Pago(
+            factura_id=factura.id,
+            cajero_id=cajero_id,
+            valor=pago.valor,
+            forma_pago=pago.forma_pago
+        ))
+        db.add(RegistroCaja(
+            turno_caja_id=caja_abierta.id,
+            usuario_id=cajero_id,
+            tipo=TipoMovimientoCaja.ENTRADA,
+            referencia=f"Abono a Factura #{factura.id}",
+            forma_pago=pago.forma_pago,
+            monto=pago.valor,
+            observacion="Cobro de ventas"
+        ))
+
+    # 4. Actualizar Saldos y Estados
+    factura.saldo = round(factura.saldo - total, 2)
     if factura.saldo <= 0: # Check robusto
         factura.estado = EstadoFactura.PAGADA
         factura.saldo = 0
     else:
         factura.estado = EstadoFactura.PAGADO_PARCIAL
-        
+
     db.commit() # Atomicidad: Pago + Flujo de Caja + Actualización de Factura
     db.refresh(factura)
     return factura
+
+
+def registrar_pago_factura(db: Session, factura_id: int, pago_in: PagoCreate, cajero_id: int):
+    """Compatibilidad: registra un único pago."""
+    return registrar_pagos_factura(db, factura_id, [pago_in], cajero_id)
 
 
 def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | None = None):
@@ -363,6 +375,16 @@ def actualizar_item_factura(
         db.rollback()
         raise HTTPException(status_code=400, detail="El producto ya fue retirado de esta factura.")
 
+    # En facturas pagadas o a crédito la cantidad solo puede aumentar: bajar o
+    # retirar productos después del cobro/cierre no es válido.
+    if factura.estado in (EstadoFactura.PAGADA, EstadoFactura.CREDITO):
+        if item_in.cantidad == 0:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="No se pueden retirar productos de una factura pagada o a crédito.")
+        if item_in.cantidad < detalle.cantidad:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="En una factura pagada o a crédito solo se puede aumentar la cantidad.")
+
     if item_in.cantidad == 0:
         activos = [d for d in factura.detalles if not d.anulado]
         if len(activos) <= 1:
@@ -416,6 +438,10 @@ def eliminar_item_factura(db: Session, factura_id: int, detalle_id: int, usuario
     if detalle.anulado:
         db.rollback()
         raise HTTPException(status_code=400, detail="El producto ya fue retirado de esta factura.")
+
+    if factura.estado in (EstadoFactura.PAGADA, EstadoFactura.CREDITO):
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No se pueden retirar productos de una factura pagada o a crédito.")
 
     activos = [d for d in factura.detalles if not d.anulado]
     if len(activos) <= 1:

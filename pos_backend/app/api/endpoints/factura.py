@@ -27,8 +27,9 @@ def crear_factura(factura: FacturaCreate, db: Session = Depends(get_db), current
     return crud_factura.crear_factura(db=db, factura_in=factura, vendedor_id=current_user.id)
 
 @router.post("/{factura_id}/pagos", response_model=FacturaResponse)
-def pagar_factura(factura_id: int, pago: PagoCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    return crud_factura.registrar_pago_factura(db=db, factura_id=factura_id, pago_in=pago, cajero_id=current_user.id)
+def registrar_pagos(factura_id: int, pagos: PagoCreate | list[PagoCreate], db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+    lista = pagos if isinstance(pagos, list) else [pagos]
+    return crud_factura.registrar_pagos_factura(db=db, factura_id=factura_id, pagos=lista, cajero_id=current_user.id)
 
 @router.get("/", response_model=Pagina[FacturaResponse])
 def listar_facturas(

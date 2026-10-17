@@ -320,6 +320,93 @@ export function Ventas() {
 
 type ItemVenta = { producto: Producto; cantidad: number }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+type LineaPago = { forma_pago: FormaPago; valor: string }
+
+function MediosPago({
+  total,
+  lineas,
+  onCambiar,
+  disabled,
+}: {
+  total: number
+  lineas: LineaPago[]
+  onCambiar: (lineas: LineaPago[]) => void
+  disabled?: boolean
+}) {
+  const asignado = round2(lineas.reduce((acc, l) => acc + (Number(l.valor) || 0), 0))
+  const falta = round2(total - asignado)
+
+  function setLinea(idx: number, parcial: Partial<LineaPago>) {
+    onCambiar(lineas.map((l, i) => (i === idx ? { ...l, ...parcial } : l)))
+  }
+
+  function agregar() {
+    const resto = Math.max(0, round2(total - asignado))
+    onCambiar([...lineas, { forma_pago: 'Efectivo', valor: String(resto) }])
+  }
+
+  return (
+    <div className="medios-pago">
+      <p className="ayuda">Medios de pago</p>
+      {lineas.map((l, idx) => (
+        <div className="fila-pago" key={idx}>
+          <select
+            value={l.forma_pago}
+            disabled={disabled}
+            onChange={(e) => setLinea(idx, { forma_pago: e.target.value as FormaPago })}
+          >
+            {FORMAS_PAGO.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={l.valor}
+            disabled={disabled}
+            onChange={(e) => setLinea(idx, { valor: e.target.value })}
+          />
+          {lineas.length > 1 && (
+            <button
+              type="button"
+              className="boton boton--mini boton--secundario"
+              disabled={disabled}
+              onClick={() => onCambiar(lineas.filter((_, i) => i !== idx))}
+            >
+              Quitar
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="acciones-fila">
+        <button
+          type="button"
+          className="boton boton--mini boton--secundario"
+          onClick={agregar}
+          disabled={disabled}
+        >
+          + Añadir medio de pago
+        </button>
+      </div>
+      <p className={falta === 0 ? 'ayuda' : 'error'}>
+        {falta === 0
+          ? 'Reparto completo.'
+          : falta > 0
+            ? `Falta por asignar ${moneda.format(falta)}.`
+            : `Excede por ${moneda.format(-falta)}.`}
+      </p>
+    </div>
+  )
+}
+
+
 function FormVenta({
   clientes,
   productos,
@@ -343,8 +430,9 @@ function FormVenta({
   const [items, setItems] = useState<ItemVenta[]>([])
   const [buscarProducto, setBuscarProducto] = useState('')
   const [cobrarAhora, setCobrarAhora] = useState(false)
-  const [formaPago, setFormaPago] = useState<FormaPago>('Efectivo')
   const [montoCobro, setMontoCobro] = useState('')
+  const [montoEditado, setMontoEditado] = useState(false)
+  const [pagos, setPagos] = useState<LineaPago[]>([])
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
@@ -352,6 +440,18 @@ function FormVenta({
     () => items.reduce((acc, i) => acc + i.producto.precio * i.cantidad, 0),
     [items],
   )
+
+  // Mantiene el monto a cobrar sincronizado con el total de la venta mientras el
+  // usuario no lo haya editado a mano.
+  useEffect(() => {
+    if (cobrarAhora && !montoEditado) setMontoCobro(String(total))
+  }, [total, cobrarAhora, montoEditado])
+
+  // Con un único medio de pago, su valor sigue al monto a cobrar.
+  useEffect(() => {
+    if (!cobrarAhora) return
+    setPagos((prev) => (prev.length === 1 ? [{ ...prev[0], valor: montoCobro }] : prev))
+  }, [montoCobro, cobrarAhora])
 
   const resultados = useMemo(() => {
     const q = buscarProducto.trim().toLowerCase()
@@ -395,7 +495,11 @@ function FormVenta({
 
   function alternarCobro(activo: boolean) {
     setCobrarAhora(activo)
-    if (activo && !montoCobro) setMontoCobro(String(total))
+    if (activo) {
+      setMontoEditado(false)
+      setMontoCobro(String(total))
+      setPagos([{ forma_pago: 'Efectivo', valor: String(total) }])
+    }
   }
 
   async function onSubmit(e: FormEvent) {
@@ -413,6 +517,15 @@ function FormVenta({
         )
         return
       }
+      const suma = round2(pagos.reduce((acc, p) => acc + (Number(p.valor) || 0), 0))
+      if (pagos.some((p) => (Number(p.valor) || 0) <= 0)) {
+        setError('Cada medio de pago debe tener un valor mayor a 0')
+        return
+      }
+      if (suma !== round2(monto)) {
+        setError('La suma de los medios de pago debe coincidir con el monto a cobrar')
+        return
+      }
     }
     setGuardando(true)
     try {
@@ -423,7 +536,10 @@ function FormVenta({
       })
       if (cobrarAhora) {
         try {
-          await pagarFactura(factura.id, { valor: Number(montoCobro), forma_pago: formaPago })
+          await pagarFactura(
+            factura.id,
+            pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
+          )
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'error desconocido'
           onGuardado(`Venta #${factura.id} registrada, pero el cobro falló: ${msg}`)
@@ -656,7 +772,7 @@ function FormVenta({
         </label>
 
         {cobrarAhora && (
-          <div className="fila-campos">
+          <div className="bloque-pago">
             <label>
               Monto a cobrar
               <input
@@ -664,22 +780,18 @@ function FormVenta({
                 min="0"
                 step="0.01"
                 value={montoCobro}
-                onChange={(e) => setMontoCobro(e.target.value)}
+                onChange={(e) => {
+                  setMontoEditado(true)
+                  setMontoCobro(e.target.value)
+                }}
               />
             </label>
-            <label>
-              Forma de pago
-              <select
-                value={formaPago}
-                onChange={(e) => setFormaPago(e.target.value as FormaPago)}
-              >
-                {FORMAS_PAGO.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <MediosPago
+              total={Number(montoCobro) || 0}
+              lineas={pagos}
+              onCambiar={setPagos}
+              disabled={guardando}
+            />
           </div>
         )}
 
@@ -730,7 +842,9 @@ function FormCobro({
 }) {
   const [f, setF] = useState<Factura>(factura)
   const [monto, setMonto] = useState(String(factura.saldo))
-  const [formaPago, setFormaPago] = useState<FormaPago>('Efectivo')
+  const [pagos, setPagos] = useState<LineaPago[]>([
+    { forma_pago: 'Efectivo', valor: String(factura.saldo) },
+  ])
   const [buscar, setBuscar] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -749,6 +863,11 @@ function FormCobro({
   const puedePagar = facturaAbierta && modo === 'pagar' && f.saldo > 0
   const activos = f.detalles.filter((d) => !d.anulado)
   const unaSolaLinea = activos.length <= 1
+
+  // Con un único medio de pago, su valor sigue al monto del pago.
+  useEffect(() => {
+    setPagos((prev) => (prev.length === 1 ? [{ ...prev[0], valor: monto }] : prev))
+  }, [monto])
 
   const resultados = useMemo(() => {
     const q = buscar.trim().toLowerCase()
@@ -809,9 +928,21 @@ function FormCobro({
       setError(`El monto debe ser mayor a 0 y no superar el saldo (${moneda.format(f.saldo)})`)
       return
     }
+    const suma = round2(pagos.reduce((acc, p) => acc + (Number(p.valor) || 0), 0))
+    if (pagos.some((p) => (Number(p.valor) || 0) <= 0)) {
+      setError('Cada medio de pago debe tener un valor mayor a 0')
+      return
+    }
+    if (suma !== round2(valor)) {
+      setError('La suma de los medios de pago debe coincidir con el monto del pago')
+      return
+    }
     setGuardando(true)
     try {
-      await pagarFactura(f.id, { valor, forma_pago: formaPago })
+      await pagarFactura(
+        f.id,
+        pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
+      )
       onGuardado()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al registrar el pago')
@@ -1016,6 +1147,7 @@ function FormCobro({
                       {editable ? (
                         <Stepper
                           valor={d.cantidad}
+                          min={(f.estado === 'Pagada' || f.estado === 'Crédito') ? d.cantidad : 1}
                           disabled={ocupado}
                           etiqueta={nombre}
                           onCambiar={(n) => void cambiarCantidad(d.id, n)}
@@ -1033,8 +1165,14 @@ function FormCobro({
                           <button
                             type="button"
                             className="boton boton--mini boton--danger"
-                            disabled={ocupado || unaSolaLinea}
-                            title={unaSolaLinea ? 'Usa Anular para dejar sin efecto la venta' : undefined}
+                            disabled={ocupado || unaSolaLinea || (f.estado === 'Pagada' || f.estado === 'Crédito')}
+                            title={
+                              f.estado === 'Pagada' || f.estado === 'Crédito'
+                                ? 'En una factura pagada o a crédito solo se puede aumentar la cantidad'
+                                : unaSolaLinea
+                                  ? 'Usa Anular para dejar sin efecto la venta'
+                                  : undefined
+                            }
                             onClick={() => void quitar(d.id, nombre)}
                           >
                             Quitar
@@ -1062,7 +1200,7 @@ function FormCobro({
 
         {puedePagar ? (
           <>
-            <div className="fila-campos">
+            <div className="bloque-pago">
               <label>
                 Monto del pago
                 <input
@@ -1073,19 +1211,12 @@ function FormCobro({
                   onChange={(e) => setMonto(e.target.value)}
                 />
               </label>
-              <label>
-                Forma de pago
-                <select
-                  value={formaPago}
-                  onChange={(e) => setFormaPago(e.target.value as FormaPago)}
-                >
-                  {FORMAS_PAGO.map((fp) => (
-                    <option key={fp} value={fp}>
-                      {fp}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <MediosPago
+                total={Number(monto) || 0}
+                lineas={pagos}
+                onCambiar={setPagos}
+                disabled={guardando || ocupado}
+              />
             </div>
             <div className="acciones">
               <span className="espaciador" />

@@ -411,6 +411,40 @@ select:focus {
   justify-content: flex-end;
 }
 
+/* ---------- Pagos combinados ---------- */
+.bloque-pago {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.medios-pago {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.medios-pago .ayuda {
+  margin: 0;
+  font-weight: 600;
+}
+
+.fila-pago {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.fila-pago select {
+  flex: 1 1 auto;
+}
+
+.fila-pago input {
+  flex: 0 0 140px;
+}
+
+
 /* ---------- Producto retirado de una factura ---------- */
 .fila-retirada {
   opacity: 0.6;

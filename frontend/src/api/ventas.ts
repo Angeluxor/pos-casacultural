@@ -91,7 +91,10 @@ export function asignarClienteFactura(
   return apiJson<Factura>(`/api/facturas/${id}/cliente`, 'PUT', { cliente_id: clienteId })
 }
 
-export function pagarFactura(id: number, data: PagoCreate): Promise<Factura> {
+export function pagarFactura(
+  id: number,
+  data: PagoCreate | PagoCreate[],
+): Promise<Factura> {
   return apiJson<Factura>(`/api/facturas/${id}/pagos`, 'POST', data)
 }
 

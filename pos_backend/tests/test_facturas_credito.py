@@ -182,3 +182,99 @@ def test_filtro_facturas_por_estado(client, token_cajero):
     # validamos el filtro. Revisamos estados devueltos:
     estados = {f["estado"] for f in credito["items"]}
     assert estados == {"Crédito"}
+
+
+def test_pago_combinado_registra_varios_medios(client, token_cajero):
+    _abrir_caja(client, token_cajero)
+    producto = _crear_producto(client, token_cajero, codigo="P210", nombre="Michelada", precio=5000)
+    factura = _vender(client, token_cajero, producto["id"], cantidad=2)
+    total = factura["total"]
+
+    resp = client.post(
+        f"/api/facturas/{factura['id']}/pagos",
+        headers=auth(token_cajero),
+        json=[
+            {"valor": total / 2, "forma_pago": "Efectivo"},
+            {"valor": total / 2, "forma_pago": "Transferencia"},
+        ],
+    )
+    assert resp.status_code == 200, resp.text
+    actualizada = resp.json()
+    assert actualizada["estado"] == "Pagada"
+    assert actualizada["saldo"] == 0
+    assert len(actualizada["pagos"]) == 2
+    assert {p["forma_pago"] for p in actualizada["pagos"]} == {"Efectivo", "Transferencia"}
+
+
+def test_pago_combinado_que_excede_el_saldo_es_rechazado(client, token_cajero):
+    _abrir_caja(client, token_cajero)
+    producto = _crear_producto(client, token_cajero, codigo="P211", nombre="Michelada doble")
+    factura = _vender(client, token_cajero, producto["id"])
+
+    resp = client.post(
+        f"/api/facturas/{factura['id']}/pagos",
+        headers=auth(token_cajero),
+        json=[
+            {"valor": factura["total"], "forma_pago": "Efectivo"},
+            {"valor": 1000, "forma_pago": "Tarjeta"},
+        ],
+    )
+    assert resp.status_code == 400
+
+    actualizada = client.get(f"/api/facturas/{factura['id']}", headers=auth(token_cajero)).json()
+    assert actualizada["estado"] == "Abierta"
+
+
+def test_factura_pagada_no_permite_bajar_cantidad_ni_retirar(client, token_cajero):
+    _abrir_caja(client, token_cajero)
+    producto = _crear_producto(client, token_cajero, codigo="P212", nombre="Michelada triple")
+    factura = _vender(client, token_cajero, producto["id"], cantidad=3)
+    detalle_id = factura["detalles"][0]["id"]
+
+    client.post(
+        f"/api/facturas/{factura['id']}/pagos",
+        headers=auth(token_cajero),
+        json={"valor": factura["total"], "forma_pago": "Efectivo"},
+    )
+
+    bajar = client.put(
+        f"/api/facturas/{factura['id']}/items/{detalle_id}",
+        headers=auth(token_cajero),
+        json={"cantidad": 2},
+    )
+    assert bajar.status_code == 400
+
+    retirar = client.delete(
+        f"/api/facturas/{factura['id']}/items/{detalle_id}", headers=auth(token_cajero)
+    )
+    assert retirar.status_code == 400
+
+
+def test_factura_credito_solo_permite_aumentar(client, token_cajero):
+    turno_id = _abrir_caja(client, token_cajero)
+    producto = _crear_producto(client, token_cajero, codigo="P213", nombre="Michelada crédito")
+    cliente = _crear_cliente(client, token_cajero, nombre="Cliente Crédito")
+    factura = _vender(client, token_cajero, producto["id"], cantidad=2, cliente_id=cliente["id"])
+    detalle_id = factura["detalles"][0]["id"]
+
+    assert _cerrar(client, token_cajero, turno_id).status_code == 200
+
+    bajar = client.put(
+        f"/api/facturas/{factura['id']}/items/{detalle_id}",
+        headers=auth(token_cajero),
+        json={"cantidad": 1},
+    )
+    assert bajar.status_code == 400
+
+    retirar = client.delete(
+        f"/api/facturas/{factura['id']}/items/{detalle_id}", headers=auth(token_cajero)
+    )
+    assert retirar.status_code == 400
+
+    aumentar = client.put(
+        f"/api/facturas/{factura['id']}/items/{detalle_id}",
+        headers=auth(token_cajero),
+        json={"cantidad": 3},
+    )
+    assert aumentar.status_code == 200, aumentar.text
+    assert aumentar.json()["detalles"][0]["cantidad"] == 3
