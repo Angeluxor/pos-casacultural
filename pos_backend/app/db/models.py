@@ -37,6 +37,22 @@ class MotivoAjuste(str, enum.Enum):
     MAL_CONTEO = "Mal conteo"
     OTRO = "Otro"
 
+class FormaPagoIngreso(str, enum.Enum):
+    EFECTIVO = "Efectivo"
+    TRANSFERENCIA = "Transferencia"
+    CREDITO = "Crédito"
+    DONACION = "Donación"
+
+class EstadoIngreso(str, enum.Enum):
+    COMPLETO = "Completo"
+    PARCIAL = "Parcial"
+    INCONSISTENTE = "Inconsistente"
+
+class TipoItemIngreso(str, enum.Enum):
+    PRODUCTO = "Producto"
+    PRODUCTO_NUEVO = "Producto nuevo"
+    OTROS = "Otros"
+
 class Usuario(Base):
     __tablename__ = "usuarios"
     id = Column(Integer, primary_key=True, index=True)
@@ -166,3 +182,52 @@ class RegistroCaja(Base):
 
     turno = relationship("TurnoCaja", back_populates="movimientos")
     usuario = relationship("Usuario")
+
+class IngresoInventario(Base):
+    __tablename__ = "ingresos_inventario"
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(DateTime(timezone=True), default=get_colombia_time)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    # El ingreso queda atado al turno de caja abierto cuando se registra.
+    turno_caja_id = Column(Integer, ForeignKey("turnos_caja.id"), nullable=True)
+    proveedor = Column(String, nullable=True)
+    forma_pago = Column(Enum(FormaPagoIngreso))
+    # Total declarado del ingreso: obligatorio y no editable después.
+    total = Column(Float)
+    estado = Column(Enum(EstadoIngreso), default=EstadoIngreso.PARCIAL)
+    # Justificación que deja un administrador al resolver un ingreso inconsistente.
+    justificacion = Column(String, nullable=True)
+    observacion = Column(String, nullable=True)
+
+    usuario = relationship("Usuario")
+    turno = relationship("TurnoCaja")
+    items = relationship(
+        "IngresoInventarioItem",
+        back_populates="ingreso",
+        cascade="all, delete-orphan",
+        order_by="IngresoInventarioItem.id",
+    )
+
+    @property
+    def suma_items(self) -> float:
+        """Valor acumulado de las líneas (para el estado y la vista)."""
+        return round(sum(item.valor or 0.0 for item in self.items), 2)
+
+class IngresoInventarioItem(Base):
+    __tablename__ = "ingresos_inventario_items"
+    id = Column(Integer, primary_key=True, index=True)
+    ingreso_id = Column(Integer, ForeignKey("ingresos_inventario.id"))
+    tipo = Column(Enum(TipoItemIngreso))
+    # Producto existente o el creado a partir de un "producto nuevo".
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
+    # Nombre del producto nuevo o concepto del ítem "Otros".
+    concepto = Column(String, nullable=True)
+    cantidad = Column(Integer, nullable=True)
+    # Costo unitario opcional: se puede completar después al editar el ingreso.
+    costo_unitario = Column(Float, nullable=True)
+    # Valor de la línea. Para "Otros" es el valor indicado; para productos es
+    # cantidad * costo_unitario y queda nulo mientras no se conozca el costo.
+    valor = Column(Float, nullable=True)
+
+    ingreso = relationship("IngresoInventario", back_populates="items")
+    producto = relationship("Producto")

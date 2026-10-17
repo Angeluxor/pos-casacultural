@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   actualizarProducto,
   crearProducto,
@@ -26,6 +27,7 @@ const moneda = new Intl.NumberFormat('es-CO', {
 export function Productos() {
   const { usuario } = useAuth()
   const esAdmin = usuario?.rol === 'Admin'
+  const navigate = useNavigate()
 
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
     usePaginacion(paginaProductos, 25)
@@ -46,12 +48,20 @@ export function Productos() {
           <h1>Productos</h1>
           <p className="ayuda">{total} productos en catálogo</p>
         </div>
-        <button
-          className="boton"
-          onClick={() => setFormProducto({ abierto: true, producto: null })}
-        >
-          + Nuevo producto
-        </button>
+        <div className="acciones-fila">
+          <button
+            className="boton boton--secundario"
+            onClick={() => navigate('/ingresos?nuevo=1')}
+          >
+            Ingreso de inventario
+          </button>
+          <button
+            className="boton"
+            onClick={() => setFormProducto({ abierto: true, producto: null })}
+          >
+            + Nuevo producto
+          </button>
+        </div>
       </header>
 
       <div className="barra">

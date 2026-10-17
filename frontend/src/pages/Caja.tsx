@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   abrirCaja,
   cerrarCaja,
@@ -37,6 +38,7 @@ function Cifras({ efectivo, banco }: { efectivo: string; banco: string }) {
 }
 
 export function Caja() {
+  const navigate = useNavigate()
   const [turno, setTurno] = useState<TurnoCaja | null>(null)
   const [movimientos, setMovimientos] = useState<RegistroCaja[]>([])
   const [cargando, setCargando] = useState(true)
@@ -93,6 +95,12 @@ export function Caja() {
           </button>
           {turno ? (
             <>
+              <button
+                className="boton boton--secundario"
+                onClick={() => navigate('/ingresos?nuevo=1')}
+              >
+                Ingreso de inventario
+              </button>
               <button className="boton boton--secundario" onClick={() => setMovModal(true)}>
                 Registrar movimiento
               </button>

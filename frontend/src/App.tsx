@@ -10,6 +10,7 @@ import { Usuarios } from './pages/Usuarios'
 import { Reportes } from './pages/Reportes'
 import { Ventas } from './pages/Ventas'
 import { Caja } from './pages/Caja'
+import { Ingresos } from './pages/Ingresos'
 import { Perfil } from './pages/Perfil'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="productos" element={<Productos />} />
           <Route path="ventas" element={<Ventas />} />
           <Route path="caja" element={<Caja />} />
+          <Route path="ingresos" element={<Ingresos />} />
           <Route path="clientes" element={<Clientes />} />
           <Route path="perfil" element={<Perfil />} />
           <Route element={<AdminRoute />}>

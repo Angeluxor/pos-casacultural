@@ -9,6 +9,7 @@ const enlaces: Enlace[] = [
   { to: '/productos', label: 'Productos' },
   { to: '/ventas', label: 'Ventas' },
   { to: '/caja', label: 'Caja' },
+  { to: '/ingresos', label: 'Ingresos' },
   { to: '/clientes', label: 'Clientes' },
 ]
 
