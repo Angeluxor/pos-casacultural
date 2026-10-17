@@ -23,3 +23,9 @@ frontend/.env.local
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- Paquetes generados (empaquetar.ps1) ---
+*-mvp.zip
+
+# --- Respaldos de base de datos (pos_backend/scripts/respaldo_bd.py) ---
+pos_backend/respaldos/

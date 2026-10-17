@@ -1,4 +1,4 @@
-# Guía de despliegue del MVP — POS Casa Cultural
+# Guía de despliegue del MVP — POS Casi Obsceno
 
 Stack: **FastAPI + SQLAlchemy** (backend) · **React + Vite** (frontend) · **PostgreSQL en Neon** (base de datos).
 
@@ -38,7 +38,7 @@ En la raíz del proyecto (`WelcomeScreen/`) ya existen los `.gitignore` que evit
 ```powershell
 git init
 git add .
-git commit -m "MVP POS Casa Cultural listo para desplegar"
+git commit -m "MVP POS Casi Obsceno listo para desplegar"
 git branch -M main
 git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
 git push -u origin main
@@ -60,7 +60,7 @@ git push -u origin main
    postgresql://USUARIO:CLAVE@ep-xxxx-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require
    ```
 
-> Las tablas **se crean solas** al arrancar el backend (`Base.metadata.create_all` en `app/main.py:14`). No necesitas Alembic para el MVP.
+> El esquema se versiona con **Alembic** y **se aplica solo al arrancar** el backend (`alembic upgrade head` en `app/db/migraciones.py`). No necesitas correr nada a mano. Si tu base ya existía de antes de Alembic (tiene las tablas pero no `alembic_version`), la app la detecta y la marca con `stamp` la primera vez.
 
 ---
 
@@ -85,7 +85,7 @@ El repo ya trae `render.yaml` (Blueprint) y `pos_backend/Dockerfile`.
 
    ```powershell
    curl https://pos-casacultural-api.onrender.com/
-   # {"message":"Bienvenido a la API del POS Casa Cultural"}
+   # {"message":"Bienvenido a la API del POS Casi Obsceno"}
    ```
 
 **¿Cómo se crea el primer administrador?**
@@ -148,7 +148,7 @@ Al iniciar el contenedor se ejecuta `scripts/crear_admin.py` (idempotente): si n
 
 ## 8. (Opcional) Cargar los datos históricos del Excel
 
-El maestro está en `pos_backend/data/Sistema_Ventas_CasaCultural_MASTER.xlsx` y el importador en `pos_backend/scripts/importar_excel.py`.
+El maestro está en `pos_backend/data/Sistema_Ventas_MASTER.xlsx` y el importador en `pos_backend/scripts/importar_excel.py`.
 
 ⚠️ **El importador también crea un usuario `admin`/`admin123`.** Úsalo en una base **vacía**; si ya sembraste el admin con el paso 3, cámbiale el nombre en el script o usa otra base.
 
@@ -194,6 +194,7 @@ En Netlify, crea `frontend/netlify.toml`:
 - [ ] `DATABASE_URL` es la **pooled**; el `.env.local`/`.neon` no están en el repo.
 - [ ] HTTPS en ambos servicios (Render y Vercel lo dan gratis).
 - [ ] Backend free tier: acepta el *cold start* o sube a un plan pago si molesta.
+- [ ] Respaldo inicial tomado y PITR de Neon configurado (ver **12. Respaldos**).
 
 ---
 
@@ -209,13 +210,41 @@ En Netlify, crea `frontend/netlify.toml`:
 
 ---
 
-## 12. Variables de entorno (referencia)
+## 12. Respaldos
+
+Hay dos capas complementarias:
+
+1. **PITR de Neon** (primaria): Neon conserva un historial que permite restaurar la base a un instante pasado (*instant restore*) o crear una rama desde ese punto. Es la forma más rápida de recuperarse de un borrado accidental. Configura la ventana de retención en **Neon → Project → Settings** y revisa <https://neon.com/docs/introduction/branch-restore>.
+2. **Respaldo portable** (secundaria, exportable): `scripts/respaldo_bd.py` vuelca todas las tablas a un JSON y `scripts/restaurar_bd.py` lo restaura respetando las claves foráneas. Sirve como copia fuera de Neon y para migrar de proveedor.
+
+```powershell
+cd pos_backend
+# Respaldo (solo lectura; usa la cadena de .env.local)
+.\venv\Scripts\python scripts\respaldo_bd.py
+# -> respaldos\respaldo_<AAAAMMDD_HHMMSS>.json
+
+# Restauración: primero el simulacro (no escribe nada)
+.\venv\Scripts\python scripts\restaurar_bd.py --archivo respaldos\respaldo_....json
+# Restauración real (base vacía) o reemplazando datos con --force
+.\venv\Scripts\python scripts\restaurar_bd.py --archivo respaldos\respaldo_....json --confirmar
+```
+
+Recomendaciones:
+
+- Guarda los respaldos **fuera del repositorio** (almacenamiento externo); `respaldos/` está en `.gitignore`.
+- Programa el respaldo (Tarea programada de Windows, cron en un servidor o un *trigger* de Neon) y **prueba la restauración** de vez en cuando contra una base de prueba.
+- Nunca subas el JSON de respaldo a un repositorio: contiene datos personales de clientes.
+
+---
+
+## 13. Variables de entorno (referencia)
 
 **Backend** (`pos_backend/.env.example`)
 
 | Variable | Obligatoria | Descripción |
 |----------|-------------|-------------|
 | `DATABASE_URL` | Sí | Cadena pooled de Neon |
+| `DATABASE_URL_UNPOOLED` | No | Cadena directa de Neon; Alembic la prefiere para migraciones |
 | `SECRET_KEY` | Sí | Firma de JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No (480) | Vigencia del token |
 | `CORS_ORIGINS` | Sí | Dominios del frontend, separados por coma |

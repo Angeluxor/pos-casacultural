@@ -1,6 +1,6 @@
 import openpyxl
 
-wb = openpyxl.load_workbook('data/Sistema_Ventas_CasaCultural_MASTER.xlsx', read_only=True, data_only=True)
+wb = openpyxl.load_workbook('data/Sistema_Ventas_MASTER.xlsx', read_only=True, data_only=True)
 
 sheets_to_peek = ['Facturas', 'DetalleFactura', 'Pagos', 'Caja', 'MovimientosInventario']
 for s in sheets_to_peek:

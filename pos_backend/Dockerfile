@@ -1,4 +1,4 @@
-# Imagen base de Python 3.12 (slim) para el backend FastAPI del POS Casa Cultural
+# Imagen base de Python 3.12 (slim) para el backend FastAPI del POS Casi Obsceno
 FROM python:3.12-slim
 
 # Salida de logs sin buffer y sin .pyc (mejor para contenedores)

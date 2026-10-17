@@ -6,13 +6,14 @@ from app.db.session import get_db
 from app.db.models import Usuario
 from app.crud import crud_usuario
 from app.core.security import create_access_token
+from app.core.rate_limit import limite_login
 from app.api.deps import get_current_active_user
 from app.schemas.usuario import UsuarioResponse, PerfilUpdate, PasswordUpdate
 
 router = APIRouter()
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(limite_login)])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     usuario = crud_usuario.authenticate(db, username=form_data.username, password=form_data.password)
     if not usuario:
@@ -21,7 +22,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_access_token(subject=usuario.username)
+    token = create_access_token(subject=usuario.username, token_version=usuario.token_version or 0)
     return {"access_token": token, "token_type": "bearer"}
 
 

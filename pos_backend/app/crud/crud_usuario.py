@@ -6,6 +6,15 @@ from typing import Optional
 from app.db.models import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, PerfilUpdate, PasswordUpdate
 from app.core.security import get_password_hash, verify_password
+from app.core.config import PASSWORD_MIN_LENGTH
+
+
+def _validar_password(password: str) -> None:
+    if len(password or "") < PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La contraseña debe tener al menos {PASSWORD_MIN_LENGTH} caracteres",
+        )
 
 def get_usuario_by_username(db: Session, username: str):
     if not username:
@@ -40,6 +49,7 @@ def obtener_usuarios(db: Session, skip: int = 0, limit: int = 100, buscar: Optio
     return total, items
 
 def crear_usuario(db: Session, usuario: UsuarioCreate):
+    _validar_password(usuario.password)
     hashed_password = get_password_hash(usuario.password)
     db_usuario = Usuario(
         username=usuario.username,
@@ -66,7 +76,10 @@ def actualizar_usuario(db: Session, user_id: int, usuario_in: UsuarioUpdate):
         setattr(usuario, campo, valor)
 
     if password:
+        _validar_password(password)
         usuario.hashed_password = get_password_hash(password)
+        # Invalida los tokens vigentes del usuario al cambiar la contraseña.
+        usuario.token_version = (usuario.token_version or 0) + 1
 
     db.commit()
     db.refresh(usuario)
@@ -105,12 +118,13 @@ def eliminar_usuario(db: Session, user_id: int):
 def cambiar_password(db: Session, usuario: Usuario, datos_in: PasswordUpdate):
     if not verify_password(datos_in.password_actual, usuario.hashed_password):
         raise HTTPException(status_code=400, detail="La contraseña actual no es correcta")
-    if len(datos_in.password_nueva) < 6:
-        raise HTTPException(status_code=400, detail="La nueva contraseña debe tener al menos 6 caracteres")
+    _validar_password(datos_in.password_nueva)
     if verify_password(datos_in.password_nueva, usuario.hashed_password):
         raise HTTPException(status_code=400, detail="La nueva contraseña debe ser diferente a la actual")
 
     usuario.hashed_password = get_password_hash(datos_in.password_nueva)
+    # Invalida los tokens vigentes (incluido el de la sesión actual).
+    usuario.token_version = (usuario.token_version or 0) + 1
     db.commit()
     db.refresh(usuario)
     return usuario

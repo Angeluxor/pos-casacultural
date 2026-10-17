@@ -1,0 +1,4 @@
+# Directorio de versiones (revisiones) de Alembic.
+#
+# Genera una nueva con:
+#   alembic revision --autogenerate -m "descripción del cambio"

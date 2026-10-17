@@ -1,11 +1,20 @@
-"""
+r"""
 Script de importacion de datos desde el Excel maestro (VB) hacia PostgreSQL (Neon).
 Ejecutar desde pos_backend/ con:
   $env:PYTHONPATH = '.'; .\venv\Scripts\python scripts\importar_excel.py
+
+El archivo de origen se puede indicar con la variable de entorno `EXCEL_ORIGEN`;
+si no, se usa el Excel maestro por defecto.
+
+La importacion es **atomica**: todo se inserta en una sola transaccion y se hace
+un único `commit` al final. Si algo falla, no queda nada a medias. Pensado para
+correr sobre una base **vacía** (tras `TRUNCATE ... RESTART IDENTITY` o recrear
+el esquema con Alembic).
 """
+import os
 import sys
 import openpyxl
-import bcrypt, math
+import bcrypt
 from datetime import datetime
 from app.core.timezone import BOGOTA_TZ
 
@@ -17,7 +26,10 @@ from app.db.models import (
     RolUsuario,
 )
 
-ARCHIVO = "data/Sistema_Ventas_CasaCultural_MASTER.xlsx"
+ARCHIVO = os.getenv(
+    "EXCEL_ORIGEN",
+    "data/Sistema_Ventas_CasaCultural_ModoUsuario.xlsx",
+)
 
 
 def safe_float(val, default=0.0):
@@ -57,6 +69,8 @@ FORMA_PAGO_MAP = {
     "efectivo": FormaPago.EFECTIVO,
     "transferencia": FormaPago.TRANSFERENCIA,
     "tarjeta": FormaPago.TARJETA,
+    "credito": FormaPago.OTRO,
+    "crédito": FormaPago.OTRO,
     "banco": FormaPago.OTRO,
     "otro": FormaPago.OTRO,
 }
@@ -91,7 +105,7 @@ def main():
         # 0. Crear un usuario sistema para las FK obligatorias
         # ============================================================
         usuario_sistema = Usuario(
-            username="admin",
+            username="sistema",
             nombre="Usuario Sistema (importacion)",
             hashed_password=bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode("utf-8"),
             rol=RolUsuario.ADMIN,
@@ -140,7 +154,7 @@ def main():
                     db.flush()
                     cliente_nombre_a_id[n.lower()] = cli.id
                     count += 1
-        db.commit()
+        db.flush()
         print(f"  {count} clientes importados (incluyendo no registrados en hoja Clientes).")
 
         # ============================================================
@@ -149,6 +163,8 @@ def main():
         print("Importando Productos...")
         ws = wb["Productos"]
         producto_codigo_a_id = {}
+        producto_clave_a_id = {}
+        codigos_usados = set()
         count = 0
         skipped = 0
         for row in ws.iter_rows(min_row=2, values_only=True):
@@ -156,20 +172,34 @@ def main():
             if not codigo:
                 continue
             codigo = safe_str(codigo).upper()
-            if codigo in producto_codigo_a_id:
+            nombre = safe_str(row[1])
+            clave = (codigo, nombre.lower())
+            if clave in producto_clave_a_id:
                 skipped += 1
                 continue
-            nombre = safe_str(row[1])
+            codigo_final = codigo
+            sufijo = 2
+            while codigo_final in codigos_usados:
+                codigo_final = f"{codigo}-{sufijo}"
+                sufijo += 1
+            codigos_usados.add(codigo_final)
             precio = safe_float(row[3])
             stock = safe_int(row[6])
 
-            p = Producto(codigo=codigo, nombre=nombre, precio=precio, stock=stock)
+            p = Producto(codigo=codigo_final, nombre=nombre, precio=precio, stock=stock)
             db.add(p)
             db.flush()
-            producto_codigo_a_id[codigo] = p.id
+            producto_clave_a_id[clave] = p.id
+            producto_clave_a_id[(codigo_final, nombre.lower())] = p.id
+            producto_codigo_a_id.setdefault(codigo, p.id)
             count += 1
-        db.commit()
+        db.flush()
         print(f"  {count} productos importados ({skipped} duplicados omitidos).")
+
+        def resolver_producto(cod, nom):
+            codigo_buscar = safe_str(cod).upper()
+            clave_buscar = (codigo_buscar, safe_str(nom).lower())
+            return producto_clave_a_id.get(clave_buscar) or producto_codigo_a_id.get(codigo_buscar)
 
         # ============================================================
         # 3. FACTURAS
@@ -177,7 +207,6 @@ def main():
         print("Importando Facturas...")
         ws = wb["Facturas"]
         factura_num_a_id = {}
-        factura_info = {}
         count = 0
         for row in ws.iter_rows(min_row=2, values_only=True):
             num_factura = row[0]
@@ -202,9 +231,8 @@ def main():
             db.add(f)
             db.flush()
             factura_num_a_id[num_factura] = f.id
-            factura_info[num_factura] = {'id': f.id, 'fecha': row[1], 'cliente': cliente_nombre, 'total': total}
             count += 1
-        db.commit()
+        db.flush()
         print(f"  {count} facturas importadas.")
 
         # ============================================================
@@ -220,8 +248,7 @@ def main():
             factura_id = factura_num_a_id.get(num_factura)
             if factura_id is None:
                 continue
-            codigo_prod = safe_str(row[2]).upper()
-            producto_id = producto_codigo_a_id.get(codigo_prod)
+            producto_id = resolver_producto(row[2], row[3])
             cantidad = safe_int(row[4], 1)
             precio_unitario = safe_float(row[5])
             subtotal = safe_float(row[6])
@@ -235,7 +262,7 @@ def main():
             )
             db.add(d)
             count += 1
-        db.commit()
+        db.flush()
         print(f"  {count} detalles de factura importados.")
 
         # ============================================================
@@ -244,39 +271,23 @@ def main():
         print("Importando Pagos...")
         ws = wb["Pagos"]
         count = 0
+        sin_pago = 0
         for row in ws.iter_rows(min_row=2, values_only=True):
             if row[0] is None or row[2] is None:
                 continue
-            valor = safe_float(row[5])
-            if valor == 0 or str(valor).startswith('-'):
-                continue
-            num_factura = row[2]
-            p_cli = safe_str(row[3]).lower()
-            target = None
-            f_cand = factura_info.get(num_factura)
-            if f_cand and (f_cand['cliente'] == p_cli or f_cand['total'] == valor or p_cli in f_cand['cliente'] or f_cand['cliente'] in p_cli):
-                target = num_factura
-            elif factura_info.get(num_factura - 1) and (factura_info[num_factura - 1]['cliente'] == p_cli or factura_info[num_factura - 1]['total'] == valor or p_cli in factura_info[num_factura - 1]['cliente']):
-                target = num_factura - 1
-            elif factura_info.get(num_factura - 2) and (factura_info[num_factura - 2]['cliente'] == p_cli or factura_info[num_factura - 2]['total'] == valor or p_cli in factura_info[num_factura - 2]['cliente']):
-                target = num_factura - 2
-            else:
-                for fid_c, fd in factura_info.items():
-                    if fd['fecha'] == row[0] and (fd['cliente'] == p_cli or p_cli in fd['cliente']) and math.isclose(fd['total'], valor, abs_tol=0.01):
-                        target = fid_c
-                        break
-            if not target:
-                target = num_factura
-            factura_id = factura_num_a_id.get(target)
-            if not factura_id:
+            factura_id = factura_num_a_id.get(row[2])
+            if factura_id is None:
                 continue
             fecha = parse_datetime(row[0], row[1])
+            valor = safe_float(row[5])
+            if valor == 0:
+                sin_pago += 1
             forma_pago = map_forma_pago(row[4])
             pago = Pago(factura_id=factura_id, cajero_id=usuario_id, fecha=fecha, valor=valor, forma_pago=forma_pago)
             db.add(pago)
             count += 1
-        db.commit()
-        print(f"  {count} pagos importados.")
+        db.flush()
+        print(f"  {count} pagos importados ({sin_pago} con valor 0).")
 
         # ============================================================
         # 6. MOVIMIENTOS DE INVENTARIO (Kardex)
@@ -286,10 +297,13 @@ def main():
         TIPO_MOV_INV_MAP = {
             "compra": TipoMovimientoInventario.ENTRADA_COMPRA,
             "entrada por compra": TipoMovimientoInventario.ENTRADA_COMPRA,
+            "inventario inicial": TipoMovimientoInventario.ENTRADA_COMPRA,
             "venta": TipoMovimientoInventario.SALIDA_VENTA,
             "salida por venta": TipoMovimientoInventario.SALIDA_VENTA,
             "devolucion": TipoMovimientoInventario.DEVOLUCION,
             "ajuste": TipoMovimientoInventario.AJUSTE,
+            "ajuste positivo": TipoMovimientoInventario.AJUSTE,
+            "ajuste negativo": TipoMovimientoInventario.AJUSTE,
         }
         count = 0
         for row in ws.iter_rows(min_row=2, values_only=True):
@@ -298,8 +312,7 @@ def main():
             fecha = parse_datetime(row[0], row[1])
             tipo_raw = safe_str(row[2]).lower()
             tipo = TIPO_MOV_INV_MAP.get(tipo_raw, TipoMovimientoInventario.AJUSTE)
-            codigo = safe_str(row[3]).upper()
-            producto_id = producto_codigo_a_id.get(codigo)
+            producto_id = resolver_producto(row[3], row[4])
             cantidad = safe_int(row[5])
             saldo_stock = safe_int(row[7])
             observacion = safe_str(row[10])
@@ -315,7 +328,7 @@ def main():
             )
             db.add(k)
             count += 1
-        db.commit()
+        db.flush()
         print(f"  {count} movimientos de inventario importados.")
 
         # ============================================================

@@ -4,15 +4,15 @@
 #
 # Excluye entornos virtuales, node_modules, dist, cachés y secretos
 # (.env.local, .neon). Escribe las rutas con "/" para que el ZIP se extraiga
-# correctamente en Windows, Linux y macOS. Resultado: "pos-casacultural-mvp.zip".
+# correctamente en Windows, Linux y macOS. Resultado: "pos-casiobsceno-mvp.zip".
 $ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
-$destino = Join-Path $raiz "pos-casacultural-mvp.zip"
-$prefijo = "pos-casacultural-mvp"
+$destino = Join-Path $raiz "pos-casiobsceno-mvp.zip"
+$prefijo = "pos-casiobsceno-mvp"
 
 # Nombres de carpeta/archivo que nunca deben entrar al paquete.
 $excluidos = @(

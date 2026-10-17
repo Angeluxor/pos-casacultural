@@ -20,15 +20,15 @@ from pathlib import Path
 # Permite `python scripts/crear_admin.py` sin depender de PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.db.base_class import Base
-from app.db.session import engine, SessionLocal
+from app.db.session import SessionLocal
+from app.db.migraciones import inicializar_esquema
 from app.db.models import Usuario, RolUsuario
 from app.core.security import get_password_hash
 
 
 def main() -> None:
-    # Garantiza que existan las tablas antes de insertar
-    Base.metadata.create_all(bind=engine)
+    # Garantiza que el esquema exista/esté al día antes de insertar.
+    inicializar_esquema()
 
     username = os.getenv("ADMIN_USERNAME", "admin")
     password = os.getenv("ADMIN_PASSWORD", "admin123")

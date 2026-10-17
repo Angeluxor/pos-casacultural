@@ -17,7 +17,7 @@ No necesitas instalar Python, Node ni Postgres: van dentro de los contenedores.
 
 ## Pasos
 
-1. **Descomprime** `pos-casacultural-mvp.zip` (o copia la carpeta del proyecto) en el otro equipo.
+1. **Descomprime** `pos-casiobsceno-mvp.zip` (o copia la carpeta del proyecto) en el otro equipo.
 2. Abre una terminal **en la carpeta que contiene `docker-compose.yml`**.
 3. Levanta todo:
 
@@ -136,4 +136,4 @@ En la máquina de origen, desde la raíz del proyecto:
 powershell -ExecutionPolicy Bypass -File .\empaquetar.ps1
 ```
 
-Genera `pos-casacultural-mvp.zip` sin entornos virtuales, `node_modules`, `dist`, cachés ni secretos (`.env.local`, `.neon`). Ese archivo es el que se comparte.
+Genera `pos-casiobsceno-mvp.zip` sin entornos virtuales, `node_modules`, `dist`, cachés ni secretos (`.env.local`, `.neon`). Ese archivo es el que se comparte.

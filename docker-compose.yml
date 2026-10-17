@@ -1,4 +1,4 @@
-# Entorno local COMPLETO para probar el MVP del POS Casa Cultural.
+# Entorno local COMPLETO para probar el MVP del POS Casi Obsceno.
 #
 #   docker compose up --build      ->  frontend en http://localhost:5173
 #   docker compose down            ->  detiene los servicios (los datos se conservan)

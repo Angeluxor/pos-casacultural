@@ -1,6 +1,6 @@
-# Guía de uso — POS Casa Cultural
+# Guía de uso — POS Casi Obsceno
 
-Bienvenido al sistema de punto de venta de Casa Cultural. Esta guía explica, en lenguaje cotidiano, cómo usar cada pantalla. Está pensada para cajeros, administradores y cualquier persona que vaya a operar el sistema a diario.
+Bienvenido al sistema de punto de venta de Casi Obsceno. Esta guía explica, en lenguaje cotidiano, cómo usar cada pantalla. Está pensada para cajeros, administradores y cualquier persona que vaya a operar el sistema a diario.
 
 ---
 

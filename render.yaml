@@ -1,4 +1,4 @@
-# Render Blueprint para el backend del POS Casa Cultural.
+# Render Blueprint para el backend del POS Casi Obsceno.
 # Crea el servicio con "New +" -> "Blueprint" apuntando a este repositorio.
 # Las variables marcadas con sync: false se piden al desplegar (no se versionan).
 services:
@@ -8,7 +8,7 @@ services:
     plan: free
     dockerfilePath: ./pos_backend/Dockerfile
     dockerContext: ./pos_backend
-    healthCheckPath: /
+    healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       # Cadena poolada de Neon (obligatoria)
@@ -17,6 +17,9 @@ services:
       # Render genera un valor aleatorio seguro
       - key: SECRET_KEY
         generateValue: true
+      # Producción: exige SECRET_KEY propia y activa HSTS.
+      - key: ENVIRONMENT
+        value: production
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "480"
       # Dominio(s) del frontend, separados por coma (ej: https://pos-casacultural.vercel.app)

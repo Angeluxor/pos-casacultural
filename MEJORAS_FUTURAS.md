@@ -1,4 +1,4 @@
-# Mejoras futuras — POS Casa Cultural
+# Mejoras futuras — POS Casi Obsceno
 
 Inventario de ideas y mejoras técnicas para las próximas iteraciones del MVP. Está ordenado por área y, dentro de lo posible, por prioridad.
 
@@ -6,8 +6,8 @@ Inventario de ideas y mejoras técnicas para las próximas iteraciones del MVP. 
 
 ## 1. Migraciones y esquema de base de datos
 
-- **Adoptar Alembic** para las migraciones. Hoy las tablas se crean con `Base.metadata.create_all` y los cambios aditivos se aplican con `app/db/migraciones.py`. Alembic da versionado de esquema, migraciones reversibles y despliegues seguros en producción.
-- **Plan de datos de respaldo**: automatizar respaldos (por ejemplo, PITR de Neon) y probar restauraciones periódicas.
+- **Alembic adoptado** ✅ para las migraciones: el esquema está versionado en `pos_backend/alembic/` (revisión base `0000_esquema_legado` + `0001_regularizacion`) y se aplica con `alembic upgrade head` al arrancar. Las bases creadas antes se marcan con `stamp 0000` y el `upgrade` repara las diferencias. Tras migrar se verifica que el esquema coincida con los modelos. Queda pendiente crear migraciones para cada cambio de modelo (en lugar de `create_all`).
+- **Plan de datos de respaldo** (parcial ✅): respaldo/restauración portables con `pos_backend/scripts/respaldo_bd.py` y `pos_backend/scripts/restaurar_bd.py` (JSON con metadatos; el restaurador es simulacro por defecto y reajusta secuencias en Postgres) y **PITR de Neon** como capa primaria (configurar la ventana de retención en el panel). Queda pendiente **automatizar** la toma de respaldos (tarea programada / *trigger* de Neon) y agendar el simulacro de restauración.
 - **Índices para consultas frecuentes**: por ejemplo, en `facturas.fecha`, `pagos.fecha`, `kardex.producto_id + fecha` y búsquedas con `ILIKE` en productos y clientes.
 
 ## 2. Seguridad / ciberseguridad
@@ -77,7 +77,7 @@ Inventario de ideas y mejoras técnicas para las próximas iteraciones del MVP. 
 
 Para cada mejora conviene priorizar por: **riesgo/beneficio**, **esfuerzo** y **momento del negocio**. Como sugerencia de arranque:
 
-1. Migraciones (Alembic) + respaldos.
+1. Migraciones (Alembic) + respaldos. ✅ (respaldos: falta automatizar la ejecución — ver §1).
 2. Rate limiting, cabeceras de seguridad y endurecimiento de contraseñas/JWT.
 3. Pruebas automatizadas y CI/CD.
 4. Reportes/impresión de recibos.

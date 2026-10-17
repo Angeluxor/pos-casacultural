@@ -40,6 +40,9 @@ class Usuario(Base):
     hashed_password = Column(String)
     rol = Column(Enum(RolUsuario), default=RolUsuario.CAJERO)
     activo = Column(Boolean, default=True)
+    # Versión de los tokens de este usuario. Al cambiar la contraseña se
+    # incrementa y los tokens emitidos antes dejan de ser válidos (revocación).
+    token_version = Column(Integer, default=0, nullable=False)
 
 class TurnoCaja(Base):
     __tablename__ = "turnos_caja"

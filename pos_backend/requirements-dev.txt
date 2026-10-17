@@ -1,0 +1,6 @@
+# Dependencias solo para desarrollo y CI (no van a producción).
+-r requirements.txt
+pytest==8.3.4
+# httpx 0.28 quitó el atajo `app=` que usa el TestClient de Starlette 0.36
+# (el que trae FastAPI 0.110). Se fija 0.27 hasta actualizar FastAPI/Starlette.
+httpx==0.27.2

@@ -1,5 +1,5 @@
 import openpyxl
-wb = openpyxl.load_workbook('data/Sistema_Ventas_CasaCultural_MASTER.xlsx', read_only=True, data_only=True)
+wb = openpyxl.load_workbook('data/Sistema_Ventas_MASTER.xlsx', read_only=True, data_only=True)
 print('Sheets:', wb.sheetnames)
 for s in wb.sheetnames:
     ws = wb[s]
