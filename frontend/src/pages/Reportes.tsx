@@ -29,6 +29,10 @@ function aIso(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+function par(efectivo: number, banco: number): string {
+  return `Ef ${moneda.format(efectivo)} · Ban ${moneda.format(banco)}`
+}
+
 export function Reportes() {
   const [tipo, setTipo] = useState<TipoReporte>('ventas')
   const tab = TABS.find((t) => t.id === tipo) ?? TABS[0]
@@ -383,7 +387,9 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
   const { datos, cargando, error } = useReporte<ReporteCaja>(() =>
     consultarCaja(conFechas ? desde : undefined, conFechas ? hasta : undefined),
   )
-  const diferencia = datos ? datos.saldo_final_total - datos.esperado_total : 0
+  const difEfectivo = datos ? datos.diferencia_efectivo_total : 0
+  const difBanco = datos ? datos.diferencia_banco_total : 0
+  const cuadrada = difEfectivo === 0 && difBanco === 0
   return (
     <>
       <BotonesExportar tipo="caja" conFechas={conFechas} desde={desde} hasta={hasta} disabled={cargando} />
@@ -393,12 +399,18 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
             <Tarjetas
               items={[
                 { label: 'Turnos cerrados', valor: String(datos.turnos) },
-                { label: 'Entradas totales', valor: moneda.format(datos.entradas_total) },
-                { label: 'Salidas totales', valor: moneda.format(datos.salidas_total) },
+                {
+                  label: 'Entradas (Ef · Ban)',
+                  valor: par(datos.entradas_efectivo_total, datos.entradas_banco_total),
+                },
+                {
+                  label: 'Salidas (Ef · Ban)',
+                  valor: par(datos.salidas_efectivo_total, datos.salidas_banco_total),
+                },
                 {
                   label: 'Diferencia acumulada',
-                  valor: moneda.format(diferencia),
-                  nota: diferencia === 0 ? 'cuadrada' : 'revisar',
+                  valor: par(difEfectivo, difBanco),
+                  nota: cuadrada ? 'cuadrada' : 'revisar',
                 },
               ]}
             />
@@ -409,7 +421,7 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
                   <tr>
                     <th>Turno</th>
                     <th>Apertura</th>
-                    <th>Saldo inicial</th>
+                    <th>Inicial (Ef · Ban)</th>
                     <th className="derecha">Entradas</th>
                     <th className="derecha">Salidas</th>
                     <th className="derecha">Esperado</th>
@@ -418,28 +430,43 @@ function CajaReporte({ conFechas, desde, hasta }: VistaProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {datos.items.map((i) => (
-                    <tr key={i.id}>
-                      <td>#{i.id}</td>
-                      <td>{formatoFecha(i.fecha_apertura)}</td>
-                      <td>{moneda.format(i.saldo_inicial)}</td>
-                      <td className="derecha">{moneda.format(i.entradas)}</td>
-                      <td className="derecha">{moneda.format(i.salidas)}</td>
-                      <td className="derecha">{moneda.format(i.esperado)}</td>
-                      <td className="derecha">
-                        {i.saldo_final_real !== null ? moneda.format(i.saldo_final_real) : '—'}
-                      </td>
-                      <td className="derecha">
-                        {i.diferencia !== null ? (
-                          <span className={i.diferencia === 0 ? 'diferencia diferencia--ok' : 'diferencia diferencia--bad'}>
-                            {moneda.format(i.diferencia)}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {datos.items.map((i) => {
+                    const cuadradaFila =
+                      (i.diferencia_efectivo ?? 0) === 0 && (i.diferencia_banco ?? 0) === 0
+                    const hayReal = i.saldo_final_efectivo !== null || i.saldo_final_banco !== null
+                    const hayDiferencia =
+                      i.diferencia_efectivo !== null || i.diferencia_banco !== null
+                    return (
+                      <tr key={i.id}>
+                        <td>#{i.id}</td>
+                        <td>{formatoFecha(i.fecha_apertura)}</td>
+                        <td>{par(i.saldo_inicial_efectivo, i.saldo_inicial_banco)}</td>
+                        <td className="derecha">{par(i.entradas_efectivo, i.entradas_banco)}</td>
+                        <td className="derecha">{par(i.salidas_efectivo, i.salidas_banco)}</td>
+                        <td className="derecha">{par(i.esperado_efectivo, i.esperado_banco)}</td>
+                        <td className="derecha">
+                          {hayReal
+                            ? par(i.saldo_final_efectivo ?? 0, i.saldo_final_banco ?? 0)
+                            : '—'}
+                        </td>
+                        <td className="derecha">
+                          {hayDiferencia ? (
+                            <span
+                              className={
+                                cuadradaFila
+                                  ? 'diferencia diferencia--ok'
+                                  : 'diferencia diferencia--bad'
+                              }
+                            >
+                              {par(i.diferencia_efectivo ?? 0, i.diferencia_banco ?? 0)}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

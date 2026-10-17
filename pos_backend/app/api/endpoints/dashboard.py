@@ -10,10 +10,9 @@ from app.db.models import (
     Producto,
     Cliente,
     TurnoCaja,
-    RegistroCaja,
     EstadoFactura,
-    TipoMovimientoCaja,
 )
+from app.crud import crud_caja
 from app.api.deps import get_current_active_user
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.schemas.dashboard import (
@@ -108,29 +107,22 @@ def resumen_dashboard(
     # --- Caja abierta ---
     turno = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
     if turno:
-        entradas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == turno.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.ENTRADA,
-            )
-            .scalar()
-        )
-        salidas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == turno.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
-            )
-            .scalar()
-        )
+        entradas, salidas = crud_caja.resumen_movimientos(db, turno.id)
         caja = CajaResumen(
             abierta=True,
             turno_id=turno.id,
-            saldo_inicial=turno.saldo_inicial,
-            entradas=entradas,
-            salidas=salidas,
-            esperado=turno.saldo_inicial + entradas - salidas,
+            saldo_inicial_efectivo=turno.saldo_inicial_efectivo,
+            saldo_inicial_banco=turno.saldo_inicial_banco,
+            entradas_efectivo=entradas["efectivo"],
+            entradas_banco=entradas["banco"],
+            salidas_efectivo=salidas["efectivo"],
+            salidas_banco=salidas["banco"],
+            esperado_efectivo=(
+                turno.saldo_inicial_efectivo + entradas["efectivo"] - salidas["efectivo"]
+            ),
+            esperado_banco=(
+                turno.saldo_inicial_banco + entradas["banco"] - salidas["banco"]
+            ),
         )
     else:
         caja = CajaResumen(abierta=False)

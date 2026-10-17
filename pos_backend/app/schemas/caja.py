@@ -4,22 +4,27 @@ from typing import Optional, List
 from app.db.models import FormaPago, TipoMovimientoCaja
 
 class TurnoCajaBase(BaseModel):
-    saldo_inicial: float = 0.0
+    saldo_inicial_efectivo: float = 0.0
+    saldo_inicial_banco: float = 0.0
 
 class TurnoCajaCreate(TurnoCajaBase):
     usuario_apertura_id: Optional[int] = None
 
 class TurnoCajaUpdate(BaseModel):
-    saldo_final_real: float
+    saldo_final_real_efectivo: float
+    saldo_final_real_banco: float
     usuario_cierre_id: Optional[int] = None
 
-class TurnoCajaResponse(TurnoCajaBase):
+class TurnoCajaResponse(BaseModel):
     id: int
     usuario_apertura_id: int
     usuario_cierre_id: Optional[int]
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime]
-    saldo_final_real: Optional[float]
+    saldo_inicial_efectivo: float
+    saldo_inicial_banco: float
+    saldo_final_real_efectivo: Optional[float]
+    saldo_final_real_banco: Optional[float]
     abierta: bool
 
     class Config:
@@ -28,10 +33,14 @@ class TurnoCajaResponse(TurnoCajaBase):
 class TurnoCajaHistorial(TurnoCajaResponse):
     usuario_apertura_nombre: Optional[str] = None
     usuario_cierre_nombre: Optional[str] = None
-    entradas: float = 0.0
-    salidas: float = 0.0
-    esperado: float = 0.0
-    diferencia: Optional[float] = None
+    entradas_efectivo: float = 0.0
+    entradas_banco: float = 0.0
+    salidas_efectivo: float = 0.0
+    salidas_banco: float = 0.0
+    esperado_efectivo: float = 0.0
+    esperado_banco: float = 0.0
+    diferencia_efectivo: Optional[float] = None
+    diferencia_banco: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -39,7 +48,7 @@ class TurnoCajaHistorial(TurnoCajaResponse):
 class RegistroCajaBase(BaseModel):
     tipo: TipoMovimientoCaja
     referencia: str
-    forma_pago: Optional[FormaPago] = None
+    forma_pago: FormaPago
     monto: float
     observacion: Optional[str] = None
 

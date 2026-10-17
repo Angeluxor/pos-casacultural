@@ -5,22 +5,17 @@ import {
   historialKardex,
   paginaProductos,
   registrarMovimiento,
+  MOTIVOS_AJUSTE,
   type KardexMovimiento,
+  type MotivoAjuste,
   type Producto,
-  type TipoMovimientoInventario,
 } from '../api/productos'
+import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
 import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { formatoFecha } from '../lib/formato'
 import { usePaginacion } from '../lib/usePaginacion'
-
-const TIPOS_MOVIMIENTO: TipoMovimientoInventario[] = [
-  'Entrada por Compra',
-  'Salida por Venta',
-  'Devolución',
-  'Ajuste',
-]
 
 const moneda = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -29,6 +24,9 @@ const moneda = new Intl.NumberFormat('es-CO', {
 })
 
 export function Productos() {
+  const { usuario } = useAuth()
+  const esAdmin = usuario?.rol === 'Admin'
+
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
     usePaginacion(paginaProductos, 25)
   const productos = datos?.items ?? []
@@ -110,12 +108,14 @@ export function Productos() {
                         <button className="boton boton--mini" onClick={() => setKardexProducto(p)}>
                           Historial
                         </button>
-                        <button
-                          className="boton boton--mini"
-                          onClick={() => setFormProducto({ abierto: true, producto: p })}
-                        >
-                          Editar
-                        </button>
+                        {esAdmin && (
+                          <button
+                            className="boton boton--mini"
+                            onClick={() => setFormProducto({ abierto: true, producto: p })}
+                          >
+                            Editar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -263,8 +263,9 @@ function FormMovimiento({
   onCerrar: () => void
   onGuardado: () => void
 }) {
-  const [tipo, setTipo] = useState<TipoMovimientoInventario>('Entrada por Compra')
   const [cantidad, setCantidad] = useState('1')
+  const [motivo, setMotivo] = useState<MotivoAjuste>('Derrama o pérdida')
+  const [motivoDetalle, setMotivoDetalle] = useState('')
   const [referencia, setReferencia] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -277,21 +278,22 @@ function FormMovimiento({
       setError('La cantidad debe ser un número entero.')
       return
     }
-    if (tipo === 'Ajuste') {
-      if (cant === 0) {
-        setError('El ajuste no puede ser 0.')
-        return
-      }
-    } else if (cant <= 0) {
-      setError('La cantidad debe ser mayor a 0.')
+    if (cant === 0) {
+      setError('El ajuste no puede ser 0.')
+      return
+    }
+    if (motivo === 'Otro' && !motivoDetalle.trim()) {
+      setError("Especifica el detalle del motivo 'Otro'.")
       return
     }
     setGuardando(true)
     try {
       await registrarMovimiento(producto.id, {
-        tipo_movimiento: tipo,
+        tipo_movimiento: 'Ajuste',
         cantidad: cant,
         referencia: referencia || undefined,
+        motivo,
+        motivo_detalle: motivo === 'Otro' ? motivoDetalle.trim() : undefined,
       })
       onGuardado()
     } catch (err) {
@@ -304,28 +306,38 @@ function FormMovimiento({
   return (
     <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
-        <h2>Movimiento de stock</h2>
+        <h2>Ajuste de stock</h2>
         <p className="ayuda">
           {producto.nombre} · stock actual: {producto.stock}
         </p>
         {error && <p className="error">{error}</p>}
         <label>
-          Tipo de movimiento
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoMovimientoInventario)}>
-            {TIPOS_MOVIMIENTO.map((t) => (
-              <option key={t} value={t}>
-                {t}
+          Motivo
+          <select value={motivo} onChange={(e) => setMotivo(e.target.value as MotivoAjuste)}>
+            {MOTIVOS_AJUSTE.map((m) => (
+              <option key={m} value={m}>
+                {m}
               </option>
             ))}
           </select>
         </label>
+        {motivo === 'Otro' && (
+          <label>
+            Detalle del motivo
+            <input
+              value={motivoDetalle}
+              onChange={(e) => setMotivoDetalle(e.target.value)}
+              placeholder="Describe el motivo del ajuste"
+              required
+            />
+          </label>
+        )}
         <label>
-          Cantidad {tipo === 'Ajuste' ? '(usa signo: + suma, − resta)' : ''}
+          Cantidad (usa signo: + suma, − resta)
           <input
             type="number"
             value={cantidad}
             onChange={(e) => setCantidad(e.target.value)}
-            min={tipo === 'Ajuste' ? undefined : 1}
             step={1}
             required
           />
@@ -404,6 +416,7 @@ function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () =
                   <th>Tipo</th>
                   <th className="derecha">Cambio</th>
                   <th className="derecha">Stock</th>
+                  <th>Motivo</th>
                   <th>Referencia</th>
                 </tr>
               </thead>
@@ -425,6 +438,10 @@ function FormKardex({ producto, onCerrar }: { producto: Producto; onCerrar: () =
                       </td>
                       <td data-label="Stock" className="derecha">
                         {m.saldo_stock}
+                      </td>
+                      <td data-label="Motivo">
+                        {m.motivo ?? '—'}
+                        {m.motivo_detalle ? ` (${m.motivo_detalle})` : ''}
                       </td>
                       <td data-label="Referencia">{m.referencia ?? '—'}</td>
                     </tr>

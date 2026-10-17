@@ -80,12 +80,18 @@ export type FilaCierreCaja = {
   fecha_cierre: string | null
   usuario_apertura: string | null
   usuario_cierre: string | null
-  saldo_inicial: number
-  entradas: number
-  salidas: number
-  esperado: number
-  saldo_final_real: number | null
-  diferencia: number | null
+  saldo_inicial_efectivo: number
+  saldo_inicial_banco: number
+  entradas_efectivo: number
+  entradas_banco: number
+  salidas_efectivo: number
+  salidas_banco: number
+  esperado_efectivo: number
+  esperado_banco: number
+  saldo_final_efectivo: number | null
+  saldo_final_banco: number | null
+  diferencia_efectivo: number | null
+  diferencia_banco: number | null
 }
 
 export type ReporteCaja = {
@@ -93,12 +99,18 @@ export type ReporteCaja = {
   hasta: string | null
   generado: string
   turnos: number
-  saldo_inicial_total: number
-  entradas_total: number
-  salidas_total: number
-  esperado_total: number
-  saldo_final_total: number
-  diferencia_total: number
+  saldo_inicial_efectivo_total: number
+  saldo_inicial_banco_total: number
+  entradas_efectivo_total: number
+  entradas_banco_total: number
+  salidas_efectivo_total: number
+  salidas_banco_total: number
+  esperado_efectivo_total: number
+  esperado_banco_total: number
+  saldo_final_efectivo_total: number
+  saldo_final_banco_total: number
+  diferencia_efectivo_total: number
+  diferencia_banco_total: number
   por_forma_pago: FormaPagoMonto[]
   items: FilaCierreCaja[]
 }

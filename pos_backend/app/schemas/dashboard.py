@@ -26,10 +26,14 @@ class ProductoBajoStock(BaseModel):
 class CajaResumen(BaseModel):
     abierta: bool
     turno_id: Optional[int] = None
-    saldo_inicial: float = 0.0
-    entradas: float = 0.0
-    salidas: float = 0.0
-    esperado: float = 0.0
+    saldo_inicial_efectivo: float = 0.0
+    saldo_inicial_banco: float = 0.0
+    entradas_efectivo: float = 0.0
+    entradas_banco: float = 0.0
+    salidas_efectivo: float = 0.0
+    salidas_banco: float = 0.0
+    esperado_efectivo: float = 0.0
+    esperado_banco: float = 0.0
 
 
 class DashboardResumen(BaseModel):

@@ -27,10 +27,16 @@ export type TipoMovimientoInventario =
   | 'Devolución'
   | 'Ajuste'
 
-export type MovimientoInventario = {
+export type MotivoAjuste = 'Derrama o pérdida' | 'Mal conteo' | 'Otro'
+
+export const MOTIVOS_AJUSTE: MotivoAjuste[] = ['Derrama o pérdida', 'Mal conteo', 'Otro']
+
+export type MovimientoStock = {
   tipo_movimiento: TipoMovimientoInventario
   cantidad: number
   referencia?: string
+  motivo?: MotivoAjuste
+  motivo_detalle?: string
 }
 
 export type KardexMovimiento = {
@@ -42,6 +48,8 @@ export type KardexMovimiento = {
   saldo_stock: number
   referencia: string | null
   tipo_movimiento: TipoMovimientoInventario
+  motivo: MotivoAjuste | null
+  motivo_detalle: string | null
 }
 
 export async function listarProductos(): Promise<Producto[]> {
@@ -71,7 +79,7 @@ export function actualizarProducto(id: number, data: ProductoUpdate): Promise<Pr
 
 export function registrarMovimiento(
   productoId: number,
-  data: MovimientoInventario,
+  data: MovimientoStock,
 ): Promise<KardexMovimiento> {
   return apiJson<KardexMovimiento>(`/api/productos/${productoId}/kardex`, 'POST', data)
 }

@@ -53,7 +53,9 @@ def registrar_kardex(db: Session, producto_id: int, kardex_data: KardexCreate, u
         tipo_movimiento=kardex_data.tipo_movimiento,
         cantidad=cantidad_movimiento,
         saldo_stock=producto.stock,
-        referencia=kardex_data.referencia
+        referencia=kardex_data.referencia,
+        motivo=kardex_data.motivo,
+        motivo_detalle=kardex_data.motivo_detalle,
     )
     
     db.add(db_kardex)

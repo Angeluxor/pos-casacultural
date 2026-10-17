@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.db.models import (
-    Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja, 
-    Pago, EstadoFactura, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
+    Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja,
+    Pago, EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
 )
 from app.core.timezone import get_colombia_time
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
@@ -172,18 +172,23 @@ def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | 
             )
         )
 
-    # 2. Devolver el dinero cobrado (salida de caja)
+    # 2. Devolver el dinero cobrado (salida de caja), separado por forma de pago
     if total_pagado > 0 and caja_abierta:
-        db.add(
-            RegistroCaja(
-                turno_caja_id=caja_abierta.id,
-                usuario_id=usuario_id,
-                tipo=TipoMovimientoCaja.SALIDA,
-                referencia=f"Anulación Factura #{factura.id}",
-                monto=total_pagado,
-                observacion=motivo or "Devolución por anulación de venta",
+        por_forma: dict[FormaPago, float] = {}
+        for pago in factura.pagos:
+            por_forma[pago.forma_pago] = por_forma.get(pago.forma_pago, 0.0) + pago.valor
+        for forma_pago, monto in por_forma.items():
+            db.add(
+                RegistroCaja(
+                    turno_caja_id=caja_abierta.id,
+                    usuario_id=usuario_id,
+                    tipo=TipoMovimientoCaja.SALIDA,
+                    referencia=f"Anulación Factura #{factura.id}",
+                    forma_pago=forma_pago,
+                    monto=monto,
+                    observacion=motivo or "Devolución por anulación de venta",
+                )
             )
-        )
 
     # 3. Marcar la factura como anulada y guardar la traza
     factura.estado = EstadoFactura.ANULADA
@@ -264,7 +269,8 @@ def _recalcular_factura(db: Session, factura: Factura, usuario_id: int):
                 turno_caja_id=caja.id,
                 usuario_id=usuario_id,
                 tipo=TipoMovimientoCaja.SALIDA,
-                referencia=f"Devolución Factura #{factura.id}",
+                referencia=f"Reembolso por modificación de venta #{factura.id}",
+                forma_pago=FormaPago.EFECTIVO,
                 monto=reembolso,
                 observacion="Devolución por modificación de venta",
             )

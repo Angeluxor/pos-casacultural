@@ -91,8 +91,11 @@ export function Dashboard() {
               <span className="mini-tarjeta__label">Caja</span>
               {datos.caja.abierta ? (
                 <>
-                  <strong>{moneda.format(datos.caja.esperado)}</strong>
-                  <small>Turno #{datos.caja.turno_id} · esperado en caja</small>
+                  <strong>
+                    {moneda.format(datos.caja.esperado_efectivo)} /{' '}
+                    {moneda.format(datos.caja.esperado_banco)}
+                  </strong>
+                  <small>Turno #{datos.caja.turno_id} · esperado Ef / Ban</small>
                 </>
               ) : (
                 <>

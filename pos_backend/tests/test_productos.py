@@ -50,7 +50,12 @@ def test_movimiento_kardex_actualiza_stock(client, token_admin):
     resp = client.post(
         f"/api/productos/{creado['id']}/kardex",
         headers=auth(token_admin),
-        json={"tipo_movimiento": "Entrada por Compra", "cantidad": 15, "referencia": "Factura compra"},
+        json={
+            "tipo_movimiento": "Ajuste",
+            "cantidad": 15,
+            "referencia": "Corrección de conteo",
+            "motivo": "Mal conteo",
+        },
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["saldo_stock"] == 25

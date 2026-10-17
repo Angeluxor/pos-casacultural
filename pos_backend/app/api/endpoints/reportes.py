@@ -20,6 +20,7 @@ from app.db.models import (
 )
 from app.api.deps import require_admin
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
+from app.crud import crud_caja
 from app.schemas.reportes import (
     FilaCartera,
     FilaCierreCaja,
@@ -335,36 +336,36 @@ def _datos_caja(db: Session, desde: str | None, hasta: str | None) -> ReporteCaj
     turnos = query.order_by(TurnoCaja.id.desc()).all()
 
     items: list[FilaCierreCaja] = []
-    saldo_inicial_total = 0.0
-    entradas_total = 0.0
-    salidas_total = 0.0
-    saldo_final_total = 0.0
+    si_efectivo_total = si_banco_total = 0.0
+    ent_efectivo_total = ent_banco_total = 0.0
+    sal_efectivo_total = sal_banco_total = 0.0
+    fin_efectivo_total = fin_banco_total = 0.0
     acum_fp: dict[str, float] = {}
 
     for t in turnos:
-        entradas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == t.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.ENTRADA,
-            )
-            .scalar()
+        entradas, salidas = crud_caja.resumen_movimientos(db, t.id)
+        esperado_efectivo = t.saldo_inicial_efectivo + entradas["efectivo"] - salidas["efectivo"]
+        esperado_banco = t.saldo_inicial_banco + entradas["banco"] - salidas["banco"]
+        diferencia_efectivo = (
+            (t.saldo_final_real_efectivo - esperado_efectivo)
+            if t.saldo_final_real_efectivo is not None
+            else None
         )
-        salidas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == t.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
-            )
-            .scalar()
+        diferencia_banco = (
+            (t.saldo_final_real_banco - esperado_banco)
+            if t.saldo_final_real_banco is not None
+            else None
         )
-        esperado = t.saldo_inicial + entradas - salidas
-        diferencia = (t.saldo_final_real - esperado) if t.saldo_final_real is not None else None
-        saldo_inicial_total += t.saldo_inicial
-        entradas_total += entradas
-        salidas_total += salidas
-        if t.saldo_final_real is not None:
-            saldo_final_total += t.saldo_final_real
+        si_efectivo_total += t.saldo_inicial_efectivo
+        si_banco_total += t.saldo_inicial_banco
+        ent_efectivo_total += entradas["efectivo"]
+        ent_banco_total += entradas["banco"]
+        sal_efectivo_total += salidas["efectivo"]
+        sal_banco_total += salidas["banco"]
+        if t.saldo_final_real_efectivo is not None:
+            fin_efectivo_total += t.saldo_final_real_efectivo
+        if t.saldo_final_real_banco is not None:
+            fin_banco_total += t.saldo_final_real_banco
 
         for fp, monto in (
             db.query(RegistroCaja.forma_pago, func.coalesce(func.sum(RegistroCaja.monto), 0.0))
@@ -385,12 +386,18 @@ def _datos_caja(db: Session, desde: str | None, hasta: str | None) -> ReporteCaj
                 fecha_cierre=t.fecha_cierre,
                 usuario_apertura=getattr(t.usuario_apertura, "nombre", None),
                 usuario_cierre=getattr(t.usuario_cierre, "nombre", None),
-                saldo_inicial=t.saldo_inicial,
-                entradas=entradas,
-                salidas=salidas,
-                esperado=esperado,
-                saldo_final_real=t.saldo_final_real,
-                diferencia=diferencia,
+                saldo_inicial_efectivo=t.saldo_inicial_efectivo,
+                saldo_inicial_banco=t.saldo_inicial_banco,
+                entradas_efectivo=entradas["efectivo"],
+                entradas_banco=entradas["banco"],
+                salidas_efectivo=salidas["efectivo"],
+                salidas_banco=salidas["banco"],
+                esperado_efectivo=esperado_efectivo,
+                esperado_banco=esperado_banco,
+                saldo_final_efectivo=t.saldo_final_real_efectivo,
+                saldo_final_banco=t.saldo_final_real_banco,
+                diferencia_efectivo=diferencia_efectivo,
+                diferencia_banco=diferencia_banco,
             )
         )
 
@@ -403,12 +410,18 @@ def _datos_caja(db: Session, desde: str | None, hasta: str | None) -> ReporteCaj
         hasta=hasta,
         generado=get_colombia_time(),
         turnos=len(turnos),
-        saldo_inicial_total=saldo_inicial_total,
-        entradas_total=entradas_total,
-        salidas_total=salidas_total,
-        esperado_total=saldo_inicial_total + entradas_total - salidas_total,
-        saldo_final_total=saldo_final_total,
-        diferencia_total=saldo_final_total - (saldo_inicial_total + entradas_total - salidas_total),
+        saldo_inicial_efectivo_total=si_efectivo_total,
+        saldo_inicial_banco_total=si_banco_total,
+        entradas_efectivo_total=ent_efectivo_total,
+        entradas_banco_total=ent_banco_total,
+        salidas_efectivo_total=sal_efectivo_total,
+        salidas_banco_total=sal_banco_total,
+        esperado_efectivo_total=si_efectivo_total + ent_efectivo_total - sal_efectivo_total,
+        esperado_banco_total=si_banco_total + ent_banco_total - sal_banco_total,
+        saldo_final_efectivo_total=fin_efectivo_total,
+        saldo_final_banco_total=fin_banco_total,
+        diferencia_efectivo_total=fin_efectivo_total - (si_efectivo_total + ent_efectivo_total - sal_efectivo_total),
+        diferencia_banco_total=fin_banco_total - (si_banco_total + ent_banco_total - sal_banco_total),
         por_forma_pago=por_forma,
         items=items,
     )
@@ -420,12 +433,18 @@ HEADER_CAJA = [
     "Cierre",
     "Abrió",
     "Cerró",
-    "Saldo inicial",
-    "Entradas",
-    "Salidas",
-    "Esperado",
-    "Saldo final real",
-    "Diferencia",
+    "Inicial efectivo",
+    "Inicial banco",
+    "Entradas efectivo",
+    "Entradas banco",
+    "Salidas efectivo",
+    "Salidas banco",
+    "Esperado efectivo",
+    "Esperado banco",
+    "Real efectivo",
+    "Real banco",
+    "Diferencia efectivo",
+    "Diferencia banco",
 ]
 
 
@@ -439,12 +458,18 @@ def _filas_caja(reporte: ReporteCaja) -> list[list]:
                 i.fecha_cierre or "",
                 i.usuario_apertura or "",
                 i.usuario_cierre or "",
-                i.saldo_inicial,
-                i.entradas,
-                i.salidas,
-                i.esperado,
-                i.saldo_final_real if i.saldo_final_real is not None else "",
-                i.diferencia if i.diferencia is not None else "",
+                i.saldo_inicial_efectivo,
+                i.saldo_inicial_banco,
+                i.entradas_efectivo,
+                i.entradas_banco,
+                i.salidas_efectivo,
+                i.salidas_banco,
+                i.esperado_efectivo,
+                i.esperado_banco,
+                i.saldo_final_efectivo if i.saldo_final_efectivo is not None else "",
+                i.saldo_final_banco if i.saldo_final_banco is not None else "",
+                i.diferencia_efectivo if i.diferencia_efectivo is not None else "",
+                i.diferencia_banco if i.diferencia_banco is not None else "",
             ]
         )
     return filas
@@ -453,11 +478,16 @@ def _filas_caja(reporte: ReporteCaja) -> list[list]:
 def _resumen_caja(reporte: ReporteCaja) -> list[tuple[str, float | int]]:
     return [
         ("Turnos cerrados", reporte.turnos),
-        ("Saldo inicial total", reporte.saldo_inicial_total),
-        ("Entradas totales", reporte.entradas_total),
-        ("Salidas totales", reporte.salidas_total),
-        ("Esperado total", reporte.esperado_total),
-        ("Saldo final total", reporte.saldo_final_total),
+        ("Inicial efectivo total", reporte.saldo_inicial_efectivo_total),
+        ("Inicial banco total", reporte.saldo_inicial_banco_total),
+        ("Entradas efectivo", reporte.entradas_efectivo_total),
+        ("Entradas banco", reporte.entradas_banco_total),
+        ("Salidas efectivo", reporte.salidas_efectivo_total),
+        ("Salidas banco", reporte.salidas_banco_total),
+        ("Esperado efectivo", reporte.esperado_efectivo_total),
+        ("Esperado banco", reporte.esperado_banco_total),
+        ("Saldo final efectivo", reporte.saldo_final_efectivo_total),
+        ("Saldo final banco", reporte.saldo_final_banco_total),
     ]
 
 

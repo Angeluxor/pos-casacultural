@@ -337,7 +337,8 @@ def main():
         print("Importando Movimientos de Caja...")
         turno = TurnoCaja(
             usuario_apertura_id=usuario_id,
-            saldo_inicial=0,
+            saldo_inicial_efectivo=0,
+            saldo_inicial_banco=0,
             abierta=False,
         )
         db.add(turno)
@@ -371,7 +372,7 @@ def main():
                 fecha=fecha,
                 tipo=tipo,
                 referencia=referencia if referencia else "Importado desde Excel",
-                forma_pago=forma_pago,
+                forma_pago=forma_pago or FormaPago.OTRO,
                 monto=monto,
                 observacion=observacion if observacion else None,
             )

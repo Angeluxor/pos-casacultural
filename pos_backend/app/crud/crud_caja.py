@@ -2,9 +2,42 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException
-from app.db.models import TurnoCaja, RegistroCaja, TipoMovimientoCaja
+from app.db.models import TurnoCaja, RegistroCaja, TipoMovimientoCaja, FormaPago
 from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate, TurnoCajaHistorial
 from app.core.timezone import get_colombia_time, BOGOTA_TZ
+
+# El bolsillo "banco" agrupa todo lo que no entra al cajón físico.
+FORMAS_BANCO = {FormaPago.TRANSFERENCIA, FormaPago.TARJETA, FormaPago.OTRO}
+
+
+def forma_es_banco(forma_pago) -> bool:
+    return forma_pago in FORMAS_BANCO
+
+
+def resumen_movimientos(db: Session, turno_id: int) -> tuple[dict, dict]:
+    """Suma las entradas y salidas del turno separadas por bolsillo (efectivo/banco)."""
+    filas = (
+        db.query(
+            RegistroCaja.tipo,
+            RegistroCaja.forma_pago,
+            func.coalesce(func.sum(RegistroCaja.monto), 0.0),
+        )
+        .filter(
+            RegistroCaja.turno_caja_id == turno_id,
+            RegistroCaja.tipo.in_(
+                [TipoMovimientoCaja.ENTRADA, TipoMovimientoCaja.SALIDA]
+            ),
+        )
+        .group_by(RegistroCaja.tipo, RegistroCaja.forma_pago)
+        .all()
+    )
+    entradas = {"efectivo": 0.0, "banco": 0.0}
+    salidas = {"efectivo": 0.0, "banco": 0.0}
+    for tipo, forma_pago, monto in filas:
+        destino = entradas if tipo == TipoMovimientoCaja.ENTRADA else salidas
+        destino["banco" if forma_es_banco(forma_pago) else "efectivo"] += float(monto)
+    return entradas, salidas
+
 
 def obtener_caja_abierta(db: Session):
     return db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
@@ -16,25 +49,32 @@ def abrir_caja(db: Session, turno: TurnoCajaCreate, usuario_id: int):
     
     db_turno = TurnoCaja(
         usuario_apertura_id=usuario_id,
-        saldo_inicial=turno.saldo_inicial,
+        saldo_inicial_efectivo=turno.saldo_inicial_efectivo,
+        saldo_inicial_banco=turno.saldo_inicial_banco,
         abierta=True
     )
     db.add(db_turno)
     db.commit()
     db.refresh(db_turno)
     
-    # Registrar el saldo inicial como un movimiento de apertura (si es mayor a 0)
-    if turno.saldo_inicial > 0:
-        movimiento = RegistroCaja(
-            turno_caja_id=db_turno.id,
-            usuario_id=usuario_id,
-            tipo=TipoMovimientoCaja.APERTURA,
-            referencia="Apertura de caja",
-            monto=turno.saldo_inicial,
-            observacion="Saldo inicial reportado al abrir caja"
-        )
-        db.add(movimiento)
-        db.commit()
+    # Registrar cada saldo inicial como un movimiento de apertura (si es mayor a 0)
+    for monto, forma_pago, detalle in (
+        (turno.saldo_inicial_efectivo, FormaPago.EFECTIVO, "efectivo"),
+        (turno.saldo_inicial_banco, FormaPago.TRANSFERENCIA, "banco"),
+    ):
+        if monto > 0:
+            db.add(
+                RegistroCaja(
+                    turno_caja_id=db_turno.id,
+                    usuario_id=usuario_id,
+                    tipo=TipoMovimientoCaja.APERTURA,
+                    referencia="Apertura de caja",
+                    forma_pago=forma_pago,
+                    monto=monto,
+                    observacion=f"Saldo inicial en {detalle} reportado al abrir caja",
+                )
+            )
+    db.commit()
         
     return db_turno
 
@@ -43,23 +83,31 @@ def cerrar_caja(db: Session, turno_id: int, datos_cierre: TurnoCajaUpdate, usuar
     if not db_turno or not db_turno.abierta:
         raise HTTPException(status_code=400, detail="El turno de caja no existe o ya está cerrado.")
         
-    db_turno.saldo_final_real = datos_cierre.saldo_final_real
+    db_turno.saldo_final_real_efectivo = datos_cierre.saldo_final_real_efectivo
+    db_turno.saldo_final_real_banco = datos_cierre.saldo_final_real_banco
     db_turno.usuario_cierre_id = usuario_id
     db_turno.fecha_cierre = get_colombia_time()
     db_turno.abierta = False
     
-    # Registrar el movimiento de cierre
-    movimiento = RegistroCaja(
-        turno_caja_id=db_turno.id,
-        usuario_id=usuario_id,
-        tipo=TipoMovimientoCaja.CIERRE,
-        referencia="Cierre de caja",
-        monto=datos_cierre.saldo_final_real,
-        observacion="Saldo reportado al cajón al cerrar"
-    )
-    db.add(movimiento)
+    # Registrar el movimiento de cierre por cada bolsillo reportado.
+    for monto, forma_pago, detalle in (
+        (datos_cierre.saldo_final_real_efectivo, FormaPago.EFECTIVO, "efectivo"),
+        (datos_cierre.saldo_final_real_banco, FormaPago.TRANSFERENCIA, "banco"),
+    ):
+        if monto > 0:
+            db.add(
+                RegistroCaja(
+                    turno_caja_id=db_turno.id,
+                    usuario_id=usuario_id,
+                    tipo=TipoMovimientoCaja.CIERRE,
+                    referencia="Cierre de caja",
+                    forma_pago=forma_pago,
+                    monto=monto,
+                    observacion=f"Saldo final reportado en {detalle} al cerrar caja",
+                )
+            )
     db.commit()
-    db.refresh(db_turno)
+    
     return db_turno
 
 def registrar_movimiento(db: Session, turno_id: int, movimiento: RegistroCajaCreate, usuario_id: int):
@@ -120,25 +168,18 @@ def obtener_turnos(
 
     resultado: list[TurnoCajaHistorial] = []
     for t in turnos:
-        entradas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == t.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.ENTRADA,
-            )
-            .scalar()
+        entradas, salidas = resumen_movimientos(db, t.id)
+        esperado_efectivo = t.saldo_inicial_efectivo + entradas["efectivo"] - salidas["efectivo"]
+        esperado_banco = t.saldo_inicial_banco + entradas["banco"] - salidas["banco"]
+        diferencia_efectivo = (
+            (t.saldo_final_real_efectivo - esperado_efectivo)
+            if t.saldo_final_real_efectivo is not None
+            else None
         )
-        salidas = float(
-            db.query(func.coalesce(func.sum(RegistroCaja.monto), 0.0))
-            .filter(
-                RegistroCaja.turno_caja_id == t.id,
-                RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
-            )
-            .scalar()
-        )
-        esperado = t.saldo_inicial + entradas - salidas
-        diferencia = (
-            (t.saldo_final_real - esperado) if t.saldo_final_real is not None else None
+        diferencia_banco = (
+            (t.saldo_final_real_banco - esperado_banco)
+            if t.saldo_final_real_banco is not None
+            else None
         )
         resultado.append(
             TurnoCajaHistorial(
@@ -147,15 +188,21 @@ def obtener_turnos(
                 usuario_cierre_id=t.usuario_cierre_id,
                 fecha_apertura=t.fecha_apertura,
                 fecha_cierre=t.fecha_cierre,
-                saldo_inicial=t.saldo_inicial,
-                saldo_final_real=t.saldo_final_real,
+                saldo_inicial_efectivo=t.saldo_inicial_efectivo,
+                saldo_inicial_banco=t.saldo_inicial_banco,
+                saldo_final_real_efectivo=t.saldo_final_real_efectivo,
+                saldo_final_real_banco=t.saldo_final_real_banco,
                 abierta=t.abierta,
                 usuario_apertura_nombre=getattr(t.usuario_apertura, "nombre", None),
                 usuario_cierre_nombre=getattr(t.usuario_cierre, "nombre", None),
-                entradas=entradas,
-                salidas=salidas,
-                esperado=esperado,
-                diferencia=diferencia,
+                entradas_efectivo=entradas["efectivo"],
+                entradas_banco=entradas["banco"],
+                salidas_efectivo=salidas["efectivo"],
+                salidas_banco=salidas["banco"],
+                esperado_efectivo=esperado_efectivo,
+                esperado_banco=esperado_banco,
+                diferencia_efectivo=diferencia_efectivo,
+                diferencia_banco=diferencia_banco,
             )
         )
     return total, resultado

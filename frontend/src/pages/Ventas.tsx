@@ -21,7 +21,7 @@ import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
 
-const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta', 'Otro']
+const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
 
 const MOTIVOS_ANULACION = [
   'Error de digitación',

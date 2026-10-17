@@ -574,6 +574,13 @@ select:focus {
   font-weight: 600;
 }
 
+.cifra-par {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
 .diferencia--ok {
   color: var(--ok);
 }

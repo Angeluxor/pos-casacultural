@@ -9,18 +9,24 @@ export type TurnoCaja = {
   usuario_cierre_id: number | null
   fecha_apertura: string
   fecha_cierre: string | null
-  saldo_inicial: number
-  saldo_final_real: number | null
+  saldo_inicial_efectivo: number
+  saldo_inicial_banco: number
+  saldo_final_real_efectivo: number | null
+  saldo_final_real_banco: number | null
   abierta: boolean
 }
 
 export type TurnoCajaHistorial = TurnoCaja & {
   usuario_apertura_nombre: string | null
   usuario_cierre_nombre: string | null
-  entradas: number
-  salidas: number
-  esperado: number
-  diferencia: number | null
+  entradas_efectivo: number
+  entradas_banco: number
+  salidas_efectivo: number
+  salidas_banco: number
+  esperado_efectivo: number
+  esperado_banco: number
+  diferencia_efectivo: number | null
+  diferencia_banco: number | null
 }
 
 export type RegistroCaja = {
@@ -30,7 +36,7 @@ export type RegistroCaja = {
   fecha: string
   tipo: TipoMovimientoCaja
   referencia: string
-  forma_pago: FormaPago | null
+  forma_pago: FormaPago
   monto: number
   observacion: string | null
 }
@@ -39,8 +45,25 @@ export type MovimientoCajaCreate = {
   tipo: TipoMovimientoCaja
   referencia: string
   monto: number
-  forma_pago?: FormaPago
+  forma_pago: FormaPago
   observacion?: string
+}
+
+export type AbrirCajaDatos = {
+  saldo_inicial_efectivo: number
+  saldo_inicial_banco: number
+}
+
+export type CerrarCajaDatos = {
+  saldo_final_real_efectivo: number
+  saldo_final_real_banco: number
+}
+
+// El bolsillo "banco" agrupa todo lo que no entra al cajón físico.
+const FORMAS_BANCO: FormaPago[] = ['Transferencia', 'Tarjeta', 'Otro']
+
+export function esFormaBanco(forma_pago: FormaPago): boolean {
+  return FORMAS_BANCO.includes(forma_pago)
 }
 
 export async function obtenerCajaActiva(): Promise<TurnoCaja | null> {
@@ -52,14 +75,12 @@ export async function obtenerCajaActiva(): Promise<TurnoCaja | null> {
   }
 }
 
-export function abrirCaja(saldo_inicial: number): Promise<TurnoCaja> {
-  return apiJson<TurnoCaja>('/api/caja/abrir', 'POST', { saldo_inicial })
+export function abrirCaja(datos: AbrirCajaDatos): Promise<TurnoCaja> {
+  return apiJson<TurnoCaja>('/api/caja/abrir', 'POST', datos)
 }
 
-export function cerrarCaja(turnoId: number, saldoFinalReal: number): Promise<TurnoCaja> {
-  return apiJson<TurnoCaja>(`/api/caja/${turnoId}/cerrar`, 'PUT', {
-    saldo_final_real: saldoFinalReal,
-  })
+export function cerrarCaja(turnoId: number, datos: CerrarCajaDatos): Promise<TurnoCaja> {
+  return apiJson<TurnoCaja>(`/api/caja/${turnoId}/cerrar`, 'PUT', datos)
 }
 
 export function registrarMovimiento(data: MovimientoCajaCreate): Promise<RegistroCaja> {

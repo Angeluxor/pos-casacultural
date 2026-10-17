@@ -81,12 +81,18 @@ class FilaCierreCaja(BaseModel):
     fecha_cierre: Optional[datetime] = None
     usuario_apertura: Optional[str] = None
     usuario_cierre: Optional[str] = None
-    saldo_inicial: float
-    entradas: float
-    salidas: float
-    esperado: float
-    saldo_final_real: Optional[float] = None
-    diferencia: Optional[float] = None
+    saldo_inicial_efectivo: float
+    saldo_inicial_banco: float
+    entradas_efectivo: float
+    entradas_banco: float
+    salidas_efectivo: float
+    salidas_banco: float
+    esperado_efectivo: float
+    esperado_banco: float
+    saldo_final_efectivo: Optional[float] = None
+    saldo_final_banco: Optional[float] = None
+    diferencia_efectivo: Optional[float] = None
+    diferencia_banco: Optional[float] = None
 
 
 class ReporteCaja(BaseModel):
@@ -94,12 +100,18 @@ class ReporteCaja(BaseModel):
     hasta: Optional[str] = None
     generado: datetime
     turnos: int
-    saldo_inicial_total: float
-    entradas_total: float
-    salidas_total: float
-    esperado_total: float
-    saldo_final_total: float
-    diferencia_total: float
+    saldo_inicial_efectivo_total: float
+    saldo_inicial_banco_total: float
+    entradas_efectivo_total: float
+    entradas_banco_total: float
+    salidas_efectivo_total: float
+    salidas_banco_total: float
+    esperado_efectivo_total: float
+    esperado_banco_total: float
+    saldo_final_efectivo_total: float
+    saldo_final_banco_total: float
+    diferencia_efectivo_total: float
+    diferencia_banco_total: float
     por_forma_pago: List[FormaPagoMonto]
     items: List[FilaCierreCaja]
 

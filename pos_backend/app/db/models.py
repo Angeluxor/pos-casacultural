@@ -32,6 +32,11 @@ class TipoMovimientoInventario(str, enum.Enum):
     DEVOLUCION = "Devolución"
     AJUSTE = "Ajuste"
 
+class MotivoAjuste(str, enum.Enum):
+    DERRAMA = "Derrama o pérdida"
+    MAL_CONTEO = "Mal conteo"
+    OTRO = "Otro"
+
 class Usuario(Base):
     __tablename__ = "usuarios"
     id = Column(Integer, primary_key=True, index=True)
@@ -51,8 +56,12 @@ class TurnoCaja(Base):
     usuario_cierre_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     fecha_apertura = Column(DateTime(timezone=True), default=get_colombia_time)
     fecha_cierre = Column(DateTime(timezone=True), nullable=True)
-    saldo_inicial = Column(Float, default=0.0)
-    saldo_final_real = Column(Float, nullable=True)
+    # La caja se lleva desdoblada en dos bolsillos: efectivo y banco
+    # (banco agrupa transferencia, tarjeta y "otro").
+    saldo_inicial_efectivo = Column(Float, default=0.0, nullable=False)
+    saldo_inicial_banco = Column(Float, default=0.0, nullable=False)
+    saldo_final_real_efectivo = Column(Float, nullable=True)
+    saldo_final_real_banco = Column(Float, nullable=True)
     abierta = Column(Boolean, default=True)
 
     usuario_apertura = relationship("Usuario", foreign_keys=[usuario_apertura_id])
@@ -88,6 +97,9 @@ class Kardex(Base):
     cantidad = Column(Integer)
     saldo_stock = Column(Integer)
     referencia = Column(String, nullable=True)
+    # Solo aplican a los movimientos manuales de tipo Ajuste.
+    motivo = Column(Enum(MotivoAjuste), nullable=True)
+    motivo_detalle = Column(String, nullable=True)
 
     producto = relationship("Producto", back_populates="movimientos_kardex")
     usuario = relationship("Usuario")
@@ -148,7 +160,7 @@ class RegistroCaja(Base):
     fecha = Column(DateTime(timezone=True), default=get_colombia_time)
     tipo = Column(Enum(TipoMovimientoCaja))
     referencia = Column(String)
-    forma_pago = Column(Enum(FormaPago), nullable=True)
+    forma_pago = Column(Enum(FormaPago), nullable=False)
     monto = Column(Float)
     observacion = Column(String, nullable=True)
 

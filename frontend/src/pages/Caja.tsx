@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import {
   abrirCaja,
   cerrarCaja,
+  esFormaBanco,
   listarTurnos,
   obtenerCajaActiva,
   obtenerMovimientos,
@@ -17,7 +18,23 @@ import { Paginacion } from '../components/Paginacion'
 import { usePaginacion } from '../lib/usePaginacion'
 import { Vacio } from '../components/Vacio'
 
-const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta', 'Otro']
+// "Otro" se conserva en la base para el histórico, pero ya no se ofrece en la UI.
+const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
+
+type Bucket = 'efectivo' | 'banco'
+
+function bucketDe(forma_pago: FormaPago): Bucket {
+  return esFormaBanco(forma_pago) ? 'banco' : 'efectivo'
+}
+
+function Cifras({ efectivo, banco }: { efectivo: string; banco: string }) {
+  return (
+    <div className="cifra-par">
+      <span>Ef {efectivo}</span>
+      <span>Ban {banco}</span>
+    </div>
+  )
+}
 
 export function Caja() {
   const [turno, setTurno] = useState<TurnoCaja | null>(null)
@@ -45,16 +62,21 @@ export function Caja() {
     void cargar()
   }, [cargar])
 
-  const { entradas, salidas, esperado } = useMemo(() => {
-    const ent = movimientos
-      .filter((m) => m.tipo === 'Entrada')
-      .reduce((acc, m) => acc + m.monto, 0)
-    const sal = movimientos
-      .filter((m) => m.tipo === 'Salida')
-      .reduce((acc, m) => acc + m.monto, 0)
-    const inicial = turno?.saldo_inicial ?? 0
-    return { entradas: ent, salidas: sal, esperado: inicial + ent - sal }
-  }, [movimientos, turno])
+  const { entradas, salidas } = useMemo(() => {
+    const ent: Record<Bucket, number> = { efectivo: 0, banco: 0 }
+    const sal: Record<Bucket, number> = { efectivo: 0, banco: 0 }
+    for (const m of movimientos) {
+      const bucket = bucketDe(m.forma_pago)
+      if (m.tipo === 'Entrada') ent[bucket] += m.monto
+      else if (m.tipo === 'Salida') sal[bucket] += m.monto
+    }
+    return { entradas: ent, salidas: sal }
+  }, [movimientos])
+
+  const esperadoEfectivo =
+    (turno?.saldo_inicial_efectivo ?? 0) + entradas.efectivo - salidas.efectivo
+  const esperadoBanco =
+    (turno?.saldo_inicial_banco ?? 0) + entradas.banco - salidas.banco
 
   if (cargando) return <p className="ayuda">Cargando…</p>
 
@@ -97,20 +119,32 @@ export function Caja() {
         <>
           <div className="resumen">
             <div className="resumen__item">
-              <span className="ayuda">Saldo inicial</span>
-              <strong>{moneda.format(turno.saldo_inicial)}</strong>
+              <span className="ayuda">Saldo inicial efectivo</span>
+              <strong>{moneda.format(turno.saldo_inicial_efectivo)}</strong>
             </div>
             <div className="resumen__item">
-              <span className="ayuda">Entradas</span>
-              <strong>{moneda.format(entradas)}</strong>
+              <span className="ayuda">Saldo inicial banco</span>
+              <strong>{moneda.format(turno.saldo_inicial_banco)}</strong>
             </div>
             <div className="resumen__item">
-              <span className="ayuda">Salidas</span>
-              <strong>{moneda.format(salidas)}</strong>
+              <span className="ayuda">Entradas (Ef / Ban)</span>
+              <strong>
+                {moneda.format(entradas.efectivo)} / {moneda.format(entradas.banco)}
+              </strong>
             </div>
             <div className="resumen__item">
-              <span className="ayuda">Esperado en caja</span>
-              <strong>{moneda.format(esperado)}</strong>
+              <span className="ayuda">Salidas (Ef / Ban)</span>
+              <strong>
+                {moneda.format(salidas.efectivo)} / {moneda.format(salidas.banco)}
+              </strong>
+            </div>
+            <div className="resumen__item">
+              <span className="ayuda">Esperado efectivo</span>
+              <strong>{moneda.format(esperadoEfectivo)}</strong>
+            </div>
+            <div className="resumen__item">
+              <span className="ayuda">Esperado banco</span>
+              <strong>{moneda.format(esperadoBanco)}</strong>
             </div>
           </div>
 
@@ -189,7 +223,8 @@ export function Caja() {
       {cerrarModal && turno && (
         <FormCerrar
           turno={turno}
-          esperado={esperado}
+          esperadoEfectivo={esperadoEfectivo}
+          esperadoBanco={esperadoBanco}
           onCerrar={() => setCerrarModal(false)}
           onGuardado={() => {
             setCerrarModal(false)
@@ -204,21 +239,32 @@ export function Caja() {
 }
 
 function FormAbrir({ onCerrar, onGuardado }: { onCerrar: () => void; onGuardado: () => void }) {
-  const [saldo, setSaldo] = useState('0')
+  const [efectivo, setEfectivo] = useState('0')
+  const [banco, setBanco] = useState('0')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+
+  const valorEfectivo = Number(efectivo)
+  const valorBanco = Number(banco)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    const valor = Number(saldo)
-    if (Number.isNaN(valor) || valor < 0) {
-      setError('El saldo inicial no puede ser negativo')
+    if (
+      Number.isNaN(valorEfectivo) ||
+      Number.isNaN(valorBanco) ||
+      valorEfectivo < 0 ||
+      valorBanco < 0
+    ) {
+      setError('Los saldos iniciales no pueden ser negativos')
       return
     }
     setGuardando(true)
     try {
-      await abrirCaja(valor)
+      await abrirCaja({
+        saldo_inicial_efectivo: valorEfectivo,
+        saldo_inicial_banco: valorBanco,
+      })
       onGuardado()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al abrir la caja')
@@ -232,16 +278,28 @@ function FormAbrir({ onCerrar, onGuardado }: { onCerrar: () => void; onGuardado:
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Abrir caja</h2>
         {error && <p className="error">{error}</p>}
-        <label>
-          Saldo inicial
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={saldo}
-            onChange={(e) => setSaldo(e.target.value)}
-          />
-        </label>
+        <div className="fila-campos">
+          <label>
+            Saldo inicial efectivo
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={efectivo}
+              onChange={(e) => setEfectivo(e.target.value)}
+            />
+          </label>
+          <label>
+            Saldo inicial banco
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={banco}
+              onChange={(e) => setBanco(e.target.value)}
+            />
+          </label>
+        </div>
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cancelar
@@ -259,7 +317,7 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
   const [tipo, setTipo] = useState<'Entrada' | 'Salida'>('Entrada')
   const [referencia, setReferencia] = useState('')
   const [monto, setMonto] = useState('')
-  const [formaPago, setFormaPago] = useState<FormaPago | ''>('')
+  const [formaPago, setFormaPago] = useState<FormaPago>('Efectivo')
   const [observacion, setObservacion] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -282,7 +340,7 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
         tipo,
         referencia: referencia.trim(),
         monto: valor,
-        forma_pago: formaPago || undefined,
+        forma_pago: formaPago,
         observacion: observacion.trim() || undefined,
       })
       onGuardado()
@@ -321,9 +379,8 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
             />
           </label>
           <label>
-            Forma de pago (opcional)
-            <select value={formaPago} onChange={(e) => setFormaPago(e.target.value as FormaPago | '')}>
-              <option value="">—</option>
+            Forma de pago
+            <select value={formaPago} onChange={(e) => setFormaPago(e.target.value as FormaPago)}>
               {FORMAS_PAGO.map((f) => (
                 <option key={f} value={f}>
                   {f}
@@ -351,32 +408,47 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
 
 function FormCerrar({
   turno,
-  esperado,
+  esperadoEfectivo,
+  esperadoBanco,
   onCerrar,
   onGuardado,
 }: {
   turno: TurnoCaja
-  esperado: number
+  esperadoEfectivo: number
+  esperadoBanco: number
   onCerrar: () => void
   onGuardado: () => void
 }) {
-  const [saldoReal, setSaldoReal] = useState(String(esperado))
+  const [realEfectivo, setRealEfectivo] = useState(String(esperadoEfectivo))
+  const [realBanco, setRealBanco] = useState(String(esperadoBanco))
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  const real = Number(saldoReal)
-  const diferencia = Number.isNaN(real) ? 0 : real - esperado
+  const valorEfectivo = Number(realEfectivo)
+  const valorBanco = Number(realBanco)
+  const diferenciaEfectivo = Number.isNaN(valorEfectivo)
+    ? 0
+    : valorEfectivo - esperadoEfectivo
+  const diferenciaBanco = Number.isNaN(valorBanco) ? 0 : valorBanco - esperadoBanco
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-    if (Number.isNaN(real) || real < 0) {
-      setError('El saldo real no puede ser negativo')
+    if (
+      Number.isNaN(valorEfectivo) ||
+      Number.isNaN(valorBanco) ||
+      valorEfectivo < 0 ||
+      valorBanco < 0
+    ) {
+      setError('Los saldos reales no pueden ser negativos')
       return
     }
     setGuardando(true)
     try {
-      await cerrarCaja(turno.id, real)
+      await cerrarCaja(turno.id, {
+        saldo_final_real_efectivo: valorEfectivo,
+        saldo_final_real_banco: valorBanco,
+      })
       onGuardado()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cerrar la caja')
@@ -392,28 +464,42 @@ function FormCerrar({
         {error && <p className="error">{error}</p>}
         <div className="resumen">
           <div className="resumen__item">
-            <span className="ayuda">Saldo inicial</span>
-            <strong>{moneda.format(turno.saldo_inicial)}</strong>
+            <span className="ayuda">Esperado efectivo</span>
+            <strong>{moneda.format(esperadoEfectivo)}</strong>
           </div>
           <div className="resumen__item">
-            <span className="ayuda">Esperado</span>
-            <strong>{moneda.format(esperado)}</strong>
+            <span className="ayuda">Esperado banco</span>
+            <strong>{moneda.format(esperadoBanco)}</strong>
           </div>
           <div className="resumen__item">
-            <span className="ayuda">Diferencia</span>
-            <strong>{moneda.format(diferencia)}</strong>
+            <span className="ayuda">Diferencia (Ef / Ban)</span>
+            <strong>
+              {moneda.format(diferenciaEfectivo)} / {moneda.format(diferenciaBanco)}
+            </strong>
           </div>
         </div>
-        <label>
-          Saldo real contado
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={saldoReal}
-            onChange={(e) => setSaldoReal(e.target.value)}
-          />
-        </label>
+        <div className="fila-campos">
+          <label>
+            Saldo real en efectivo
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={realEfectivo}
+              onChange={(e) => setRealEfectivo(e.target.value)}
+            />
+          </label>
+          <label>
+            Saldo real en banco
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={realBanco}
+              onChange={(e) => setRealBanco(e.target.value)}
+            />
+          </label>
+        </div>
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cancelar
@@ -504,9 +590,9 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
                   <th>Cierre</th>
                   <th>Abrió</th>
                   <th>Cerró</th>
-                  <th className="derecha">Esperado</th>
-                  <th className="derecha">Real</th>
-                  <th className="derecha">Diferencia</th>
+                  <th className="derecha">Esperado (Ef / Ban)</th>
+                  <th className="derecha">Real (Ef / Ban)</th>
+                  <th className="derecha">Diferencia (Ef / Ban)</th>
                   <th></th>
                 </tr>
               </thead>
@@ -528,25 +614,30 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
                           (t.usuario_cierre_id ? `#${t.usuario_cierre_id}` : '—')}
                       </td>
                       <td data-label="Esperado" className="derecha">
-                        {moneda.format(t.esperado)}
+                        <Cifras
+                          efectivo={moneda.format(t.esperado_efectivo)}
+                          banco={moneda.format(t.esperado_banco)}
+                        />
                       </td>
                       <td data-label="Real" className="derecha">
-                        {t.saldo_final_real != null ? moneda.format(t.saldo_final_real) : '—'}
+                        <Cifras
+                          efectivo={
+                            t.saldo_final_real_efectivo != null
+                              ? moneda.format(t.saldo_final_real_efectivo)
+                              : '—'
+                          }
+                          banco={
+                            t.saldo_final_real_banco != null
+                              ? moneda.format(t.saldo_final_real_banco)
+                              : '—'
+                          }
+                        />
                       </td>
                       <td data-label="Diferencia" className="derecha">
-                        {t.diferencia != null ? (
-                          <span
-                            className={
-                              t.diferencia === 0
-                                ? 'diferencia diferencia--ok'
-                                : 'diferencia diferencia--bad'
-                            }
-                          >
-                            {moneda.format(t.diferencia)}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
+                        <Cifras
+                          efectivo={moneda.format(t.diferencia_efectivo ?? 0)}
+                          banco={moneda.format(t.diferencia_banco ?? 0)}
+                        />
                       </td>
                       <td className="celda-accion">
                         <button

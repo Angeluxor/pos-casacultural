@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.db.models import TipoMovimientoInventario
+from app.db.models import TipoMovimientoInventario, MotivoAjuste
 
 class ProductoBase(BaseModel):
     codigo: str
@@ -27,6 +27,9 @@ class KardexBase(BaseModel):
     tipo_movimiento: TipoMovimientoInventario
     cantidad: int
     referencia: Optional[str] = None
+    # Solo se usan en los ajustes manuales de stock.
+    motivo: Optional[MotivoAjuste] = None
+    motivo_detalle: Optional[str] = None
 
 class KardexCreate(KardexBase):
     usuario_id: Optional[int] = None

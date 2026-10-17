@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
-from app.db.models import Usuario
-from app.api.deps import get_current_active_user
+from app.db.models import Usuario, TipoMovimientoInventario, MotivoAjuste
+from app.api.deps import get_current_active_user, require_admin
 from app.schemas.producto import ProductoCreate, ProductoUpdate, ProductoResponse, KardexCreate, KardexResponse
 from app.schemas.common import Pagina
 from app.crud import crud_producto
@@ -31,12 +31,19 @@ def leer_producto(producto_id: int, db: Session = Depends(get_db), current_user:
     return db_producto
 
 @router.put("/{producto_id}", response_model=ProductoResponse)
-def actualizar_producto(producto_id: int, producto: ProductoUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+def actualizar_producto(producto_id: int, producto: ProductoUpdate, db: Session = Depends(get_db), current_user: Usuario = Depends(require_admin)):
     return crud_producto.actualizar_producto(db=db, producto_id=producto_id, producto_in=producto)
 
 @router.post("/{producto_id}/kardex", response_model=KardexResponse)
 def registrar_movimiento_inventario(producto_id: int, kardex: KardexCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
-    # Útil para ingresos de nueva mercancía, ajustes manuales o devoluciones sin factura.
+    # El movimiento manual de stock solo permite ajustes (entradas/salidas
+    # automáticas las generan las compras, ventas y devoluciones).
+    if kardex.tipo_movimiento != TipoMovimientoInventario.AJUSTE:
+        raise HTTPException(status_code=400, detail="El movimiento manual de stock solo permite ajustes.")
+    if kardex.motivo is None:
+        raise HTTPException(status_code=400, detail="Debes indicar el motivo del ajuste.")
+    if kardex.motivo == MotivoAjuste.OTRO and not (kardex.motivo_detalle or "").strip():
+        raise HTTPException(status_code=400, detail="Especifica el detalle del motivo 'Otro'.")
     return crud_producto.registrar_kardex(db=db, producto_id=producto_id, kardex_data=kardex, usuario_id=current_user.id)
 
 @router.get("/{producto_id}/kardex", response_model=List[KardexResponse])

@@ -16,10 +16,14 @@ export type ProductoBajoStock = {
 export type CajaResumen = {
   abierta: boolean
   turno_id: number | null
-  saldo_inicial: number
-  entradas: number
-  salidas: number
-  esperado: number
+  saldo_inicial_efectivo: number
+  saldo_inicial_banco: number
+  entradas_efectivo: number
+  entradas_banco: number
+  salidas_efectivo: number
+  salidas_banco: number
+  esperado_efectivo: number
+  esperado_banco: number
 }
 
 export type DashboardKpis = {
