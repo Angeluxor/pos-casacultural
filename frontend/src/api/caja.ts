@@ -91,6 +91,20 @@ export function obtenerMovimientos(turnoId: number): Promise<RegistroCaja[]> {
   return apiFetch<RegistroCaja[]>(`/api/caja/${turnoId}/movimientos`)
 }
 
+export type FacturaPendienteCierre = {
+  id: number
+  cliente_id: number | null
+  cliente_nombre: string | null
+  nombre_eventual: string | null
+  total: number
+  saldo: number
+  es_eventual: boolean
+}
+
+export function obtenerFacturasPendientes(turnoId: number): Promise<FacturaPendienteCierre[]> {
+  return apiFetch<FacturaPendienteCierre[]>(`/api/caja/${turnoId}/pendientes`)
+}
+
 export function listarTurnos(params: {
   skip: number
   limit: number

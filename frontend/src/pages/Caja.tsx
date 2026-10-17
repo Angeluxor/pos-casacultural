@@ -6,8 +6,10 @@ import {
   esFormaBanco,
   listarTurnos,
   obtenerCajaActiva,
+  obtenerFacturasPendientes,
   obtenerMovimientos,
   registrarMovimiento,
+  type FacturaPendienteCierre,
   type RegistroCaja,
   type TurnoCaja,
   type TurnoCajaHistorial,
@@ -431,6 +433,28 @@ function FormCerrar({
   const [realBanco, setRealBanco] = useState(String(esperadoBanco))
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [pendientes, setPendientes] = useState<FacturaPendienteCierre[]>([])
+  const [cargandoPendientes, setCargandoPendientes] = useState(true)
+
+  useEffect(() => {
+    let activo = true
+    setCargandoPendientes(true)
+    obtenerFacturasPendientes(turno.id)
+      .then((l) => {
+        if (activo) setPendientes(l)
+      })
+      .catch(() => {
+        if (activo) setPendientes([])
+      })
+      .finally(() => {
+        if (activo) setCargandoPendientes(false)
+      })
+    return () => {
+      activo = false
+    }
+  }, [turno.id])
+
+  const eventualesSinPagar = pendientes.filter((p) => p.es_eventual)
 
   const valorEfectivo = Number(realEfectivo)
   const valorBanco = Number(realBanco)
@@ -442,6 +466,12 @@ function FormCerrar({
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    if (eventualesSinPagar.length > 0) {
+      setError(
+        'Hay facturas de cliente eventual sin pagar. Asígnales un cliente o cóbralas antes de cerrar.',
+      )
+      return
+    }
     if (
       Number.isNaN(valorEfectivo) ||
       Number.isNaN(valorBanco) ||
@@ -508,11 +538,43 @@ function FormCerrar({
             />
           </label>
         </div>
+        {cargandoPendientes ? (
+          <p className="ayuda">Revisando facturas pendientes…</p>
+        ) : pendientes.length > 0 ? (
+          <div className="pendientes-cierre">
+            <p className="ayuda">
+              Facturas de este turno con saldo pendiente ({pendientes.length}):
+            </p>
+            <ul className="lista-pendientes">
+              {pendientes.map((p) => (
+                <li key={p.id}>
+                  <span>
+                    #{p.id} · {p.cliente_nombre || '—'}
+                  </span>
+                  <span className={p.es_eventual ? 'badge badge--warn' : 'badge badge--info'}>
+                    {p.es_eventual ? 'Eventual · ' : ''}
+                    Saldo {moneda.format(p.saldo)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {eventualesSinPagar.length > 0 && (
+              <p className="error">
+                Hay {eventualesSinPagar.length} factura(s) de cliente eventual sin pagar. Asígnales
+                un cliente o cóbralas antes de cerrar la caja.
+              </p>
+            )}
+          </div>
+        ) : null}
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cancelar
           </button>
-          <button type="submit" className="boton boton--danger" disabled={guardando}>
+          <button
+            type="submit"
+            className="boton boton--danger"
+            disabled={guardando || eventualesSinPagar.length > 0}
+          >
             {guardando ? 'Cerrando…' : 'Cerrar caja'}
           </button>
         </div>

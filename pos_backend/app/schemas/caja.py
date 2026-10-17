@@ -65,3 +65,15 @@ class RegistroCajaResponse(RegistroCajaBase):
 
     class Config:
         from_attributes = True
+
+
+class FacturaPendienteCierre(BaseModel):
+    """Factura con saldo por cobrar al momento de cerrar la caja."""
+
+    id: int
+    cliente_id: Optional[int] = None
+    cliente_nombre: Optional[str] = None
+    nombre_eventual: Optional[str] = None
+    total: float
+    saldo: float
+    es_eventual: bool

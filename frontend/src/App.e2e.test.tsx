@@ -22,6 +22,7 @@ const DASHBOARD: DashboardResumen = {
     ventas_7d_total: 850000,
     cartera_total: 200000,
     facturas_pendientes: 2,
+    facturas_credito: 1,
   },
   ventas_ultimos_7_dias: [
     { fecha: '2026-10-04', total: 100000, cantidad: 2 },
@@ -35,7 +36,7 @@ const DASHBOARD: DashboardResumen = {
   productos_bajo_stock: [
     { id: 7, codigo: 'LI006', nombre: 'Ron Media', stock: 2 },
   ],
-  facturas_por_estado: { Pendiente: 2, 'Pagado Parcial': 1, Pagada: 530, Anulada: 0 },
+  facturas_por_estado: { Abierta: 2, 'Pagado Parcial': 1, Pagada: 530, Crédito: 1, Anulada: 0 },
   caja: {
     abierta: true,
     turno_id: 1,

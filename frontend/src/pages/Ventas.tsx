@@ -3,8 +3,10 @@ import {
   actualizarItemFactura,
   agregarItemFactura,
   anularFactura,
+  asignarClienteFactura,
   crearFactura,
   eliminarItemFactura,
+  ESTADOS_FACTURA,
   listarFacturasPaginado,
   pagarFactura,
   type EstadoFactura,
@@ -20,6 +22,7 @@ import { confirmarCierre } from '../lib/modal'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
+import { FormCliente } from './Clientes'
 
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
 
@@ -42,6 +45,8 @@ function claseEstado(estado: EstadoFactura): string {
       return 'badge badge--on'
     case 'Pagado Parcial':
       return 'badge badge--info'
+    case 'Crédito':
+      return 'badge badge--credito'
     case 'Anulada':
       return 'badge badge--off'
     default:
@@ -52,6 +57,13 @@ function claseEstado(estado: EstadoFactura): string {
 export function Ventas() {
   const { usuario } = useAuth()
   const esAdmin = usuario?.rol === 'Admin'
+
+  const [estado, setEstado] = useState<EstadoFactura | ''>('')
+  const cargarFacturas = useCallback(
+    (params: Parameters<typeof listarFacturasPaginado>[0]) =>
+      listarFacturasPaginado({ ...params, estado }),
+    [estado],
+  )
 
   const {
     datos,
@@ -67,10 +79,14 @@ export function Ventas() {
     error,
     recargar,
     tamano,
-  } = usePaginacion(listarFacturasPaginado, 30)
+  } = usePaginacion(cargarFacturas, 30)
   const facturas = datos?.items ?? []
   const total = datos?.total ?? 0
-  const hayFiltros = buscar.trim() !== '' || desde !== '' || hasta !== ''
+  const hayFiltros = buscar.trim() !== '' || desde !== '' || hasta !== '' || estado !== ''
+
+  useEffect(() => {
+    setSkip(0)
+  }, [estado, setSkip])
 
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [productos, setProductos] = useState<Producto[]>([])
@@ -102,7 +118,9 @@ export function Ventas() {
     void cargarCatalogo()
   }, [cargarCatalogo])
 
-  const clientesPorId = useMemo(() => new Map(clientes.map((c) => [c.id, c])), [clientes])
+  const agregarCliente = useCallback((c: Cliente) => {
+    setClientes((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]))
+  }, [])
 
   const catalogoListo = !cargandoCatalogo && productos.length > 0
 
@@ -148,6 +166,20 @@ export function Ventas() {
             onChange={(e) => setHasta(e.target.value)}
           />
         </label>
+        <label className="campo-fecha">
+          <span>Estado</span>
+          <select
+            value={estado}
+            onChange={(e) => setEstado(e.target.value as EstadoFactura | '')}
+          >
+            <option value="">Todas</option>
+            {ESTADOS_FACTURA.map((op) => (
+              <option key={op} value={op}>
+                {op}
+              </option>
+            ))}
+          </select>
+        </label>
         {hayFiltros && (
           <button
             type="button"
@@ -156,6 +188,7 @@ export function Ventas() {
               setBuscar('')
               setDesde('')
               setHasta('')
+              setEstado('')
             }}
           >
             Limpiar filtros
@@ -199,11 +232,7 @@ export function Ventas() {
                   <tr key={f.id}>
                     <td data-label="Factura">#{f.id}</td>
                     <td data-label="Fecha">{formatoFecha(f.fecha)}</td>
-                    <td data-label="Cliente">
-                      {f.cliente_id
-                        ? clientesPorId.get(f.cliente_id)?.nombre ?? f.cliente_id
-                        : '—'}
-                    </td>
+                    <td data-label="Cliente">{f.cliente_nombre || '—'}</td>
                     <td data-label="Total" className="derecha">
                       {moneda.format(f.total)}
                     </td>
@@ -257,6 +286,7 @@ export function Ventas() {
           clientes={clientes}
           productos={productos}
           catalogoListo={catalogoListo}
+          onClienteCreado={agregarCliente}
           onCerrar={() => setNuevaAbierta(false)}
           onGuardado={(aviso) => {
             setNuevaAbierta(false)
@@ -270,6 +300,7 @@ export function Ventas() {
         <FormCobro
           factura={cobrar}
           productos={productos}
+          clientes={clientes}
           esAdmin={esAdmin}
           modo={modoFactura}
           onCerrar={() => {
@@ -293,16 +324,20 @@ function FormVenta({
   clientes,
   productos,
   catalogoListo,
+  onClienteCreado,
   onCerrar,
   onGuardado,
 }: {
   clientes: Cliente[]
   productos: Producto[]
   catalogoListo: boolean
+  onClienteCreado: (cliente: Cliente) => void
   onCerrar: () => void
   onGuardado: (aviso?: string) => void
 }) {
   const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [nombreEventual, setNombreEventual] = useState('')
+  const [creandoCliente, setCreandoCliente] = useState(false)
   const [buscarCliente, setBuscarCliente] = useState('')
   const [eligiendoCliente, setEligiendoCliente] = useState(false)
   const [items, setItems] = useState<ItemVenta[]>([])
@@ -382,7 +417,8 @@ function FormVenta({
     setGuardando(true)
     try {
       const factura = await crearFactura({
-        cliente_id: cliente?.id ?? null,
+        cliente_id: cliente ? cliente.id : null,
+        nombre_eventual: cliente ? null : nombreEventual.trim() || null,
         detalles: items.map((i) => ({ producto_id: i.producto.id, cantidad: i.cantidad })),
       })
       if (cobrarAhora) {
@@ -403,6 +439,7 @@ function FormVenta({
   }
 
   return (
+    <>
     <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Nueva venta</h2>
@@ -466,33 +503,54 @@ function FormVenta({
                 setEligiendoCliente(false)
               }}
             >
-              Usar «Consumidor final»
+              Usar cliente eventual
             </button>
           </div>
         ) : (
-          <div className="seleccion-chip seleccion-chip--defecto">
-            <span className="cliente-defecto">
-              Consumidor final
-              <span
-                className="info-tip"
-                tabIndex={0}
-                role="img"
-                aria-label="Sugerencia sobre clientes"
-              >
-                i
-                <span className="info-tip__globito">
-                  Se recomienda registrar y seleccionar al cliente siempre que sea posible, para
-                  llevar su historial de compras.
+          <div className="cliente-venta">
+            <div className="seleccion-chip seleccion-chip--defecto">
+              <span className="cliente-defecto">
+                Cliente eventual
+                <span
+                  className="info-tip"
+                  tabIndex={0}
+                  role="img"
+                  aria-label="Sugerencia sobre clientes"
+                >
+                  i
+                  <span className="info-tip__globito">
+                    Se recomienda registrar y seleccionar al cliente siempre que sea posible, para
+                    llevar su historial de compras.
+                  </span>
                 </span>
               </span>
-            </span>
-            <button
-              type="button"
-              className="boton boton--mini"
-              onClick={() => setEligiendoCliente(true)}
-            >
-              Elegir cliente
-            </button>
+              <div className="acciones-fila">
+                <button
+                  type="button"
+                  className="boton boton--mini"
+                  onClick={() => setEligiendoCliente(true)}
+                >
+                  Elegir cliente
+                </button>
+                <button
+                  type="button"
+                  className="boton boton--mini boton--secundario"
+                  onClick={() => setCreandoCliente(true)}
+                >
+                  Crear cliente
+                </button>
+              </div>
+            </div>
+            <label htmlFor="venta-nombre-eventual" className="campo-nombre-eventual">
+              <span>Nombre (opcional)</span>
+              <input
+                id="venta-nombre-eventual"
+                placeholder="Nombre temporal del cliente"
+                value={nombreEventual}
+                onChange={(e) => setNombreEventual(e.target.value)}
+                maxLength={100}
+              />
+            </label>
           </div>
         )}
 
@@ -634,13 +692,29 @@ function FormVenta({
           </button>
         </div>
       </form>
-    </div>
+      </div>
+      {creandoCliente && (
+        <FormCliente
+          cliente={null}
+          onCerrar={() => setCreandoCliente(false)}
+          onGuardado={(creado) => {
+            setCreandoCliente(false)
+            if (creado) {
+              onClienteCreado(creado)
+              setCliente(creado)
+              setNombreEventual('')
+            }
+          }}
+        />
+      )}
+    </>
   )
 }
 
 function FormCobro({
   factura,
   productos,
+  clientes,
   esAdmin,
   modo,
   onCerrar,
@@ -648,6 +722,7 @@ function FormCobro({
 }: {
   factura: Factura
   productos: Producto[]
+  clientes: Cliente[]
   esAdmin: boolean
   modo: 'ver' | 'pagar'
   onCerrar: () => void
@@ -664,6 +739,8 @@ function FormCobro({
   const [mostrandoAnular, setMostrandoAnular] = useState(false)
   const [motivoAnular, setMotivoAnular] = useState(MOTIVOS_ANULACION[0])
   const [motivoOtro, setMotivoOtro] = useState('')
+  const [asignando, setAsignando] = useState(false)
+  const [buscarCliente, setBuscarCliente] = useState('')
 
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const esPago = modo === 'pagar'
@@ -763,6 +840,33 @@ function FormCobro({
     }
   }
 
+  async function asignar(id: number) {
+    setError('')
+    setOcupado(true)
+    try {
+      aplicar(await asignarClienteFactura(f.id, id))
+      setAsignando(false)
+      setBuscarCliente('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo asignar el cliente')
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  const resultadosCliente = useMemo(() => {
+    const q = buscarCliente.trim().toLowerCase()
+    if (!q) return []
+    return clientes
+      .filter(
+        (c) =>
+          c.nombre.toLowerCase().includes(q) ||
+          (c.celular ?? '').toLowerCase().includes(q) ||
+          (c.correo ?? '').toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+  }, [clientes, buscarCliente])
+
   const pagado = f.total - f.saldo
 
   return (
@@ -781,6 +885,56 @@ function FormCobro({
           </p>
         )}
         {error && <p className="error">{error}</p>}
+
+        <p className="ayuda">Cliente: {f.cliente_nombre || '—'}</p>
+        {facturaAbierta &&
+          (asignando ? (
+            <div className="buscador-producto">
+              <input
+                autoFocus
+                placeholder="Buscar cliente por nombre, celular o correo…"
+                value={buscarCliente}
+                onChange={(e) => setBuscarCliente(e.target.value)}
+                disabled={ocupado}
+              />
+              {resultadosCliente.length > 0 && (
+                <ul className="sugerencias">
+                  {resultadosCliente.map((c) => (
+                    <li key={c.id}>
+                      <button type="button" onClick={() => void asignar(c.id)}>
+                        <span>{c.nombre}</span>
+                        <span className="ayuda">{contactoSecundario(c)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {buscarCliente.trim() && resultadosCliente.length === 0 && (
+                <p className="ayuda">Sin coincidencias para «{buscarCliente.trim()}».</p>
+              )}
+              <button
+                type="button"
+                className="boton boton--secundario boton--mini enlace-ver-mas"
+                onClick={() => {
+                  setAsignando(false)
+                  setBuscarCliente('')
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div className="acciones-fila">
+              <button
+                type="button"
+                className="boton boton--mini boton--secundario"
+                onClick={() => setAsignando(true)}
+                disabled={ocupado}
+              >
+                Asignar cliente
+              </button>
+            </div>
+          ))}
 
         {editable && (
           <>

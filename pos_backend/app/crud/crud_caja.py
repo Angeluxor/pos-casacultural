@@ -2,12 +2,36 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException
-from app.db.models import TurnoCaja, RegistroCaja, TipoMovimientoCaja, FormaPago
+from app.db.models import (
+    TurnoCaja,
+    RegistroCaja,
+    TipoMovimientoCaja,
+    FormaPago,
+    Factura,
+    EstadoFactura,
+)
 from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate, TurnoCajaHistorial
 from app.core.timezone import get_colombia_time, BOGOTA_TZ
 
 # El bolsillo "banco" agrupa todo lo que no entra al cajón físico.
 FORMAS_BANCO = {FormaPago.TRANSFERENCIA, FormaPago.TARJETA, FormaPago.OTRO}
+
+# Facturas con saldo por cobrar que, al cerrar la caja, pasan a Crédito.
+ESTADOS_PENDIENTES_CIERRE = (EstadoFactura.ABIERTA, EstadoFactura.PAGADO_PARCIAL)
+
+
+def facturas_pendientes_cierre(db: Session, turno_id: int):
+    """Facturas del turno con saldo por cobrar (Abierta o Pagado Parcial)."""
+    return (
+        db.query(Factura)
+        .filter(
+            Factura.turno_caja_id == turno_id,
+            Factura.estado.in_(ESTADOS_PENDIENTES_CIERRE),
+            Factura.saldo > 0,
+        )
+        .order_by(Factura.id.asc())
+        .all()
+    )
 
 
 def forma_es_banco(forma_pago) -> bool:
@@ -82,7 +106,28 @@ def cerrar_caja(db: Session, turno_id: int, datos_cierre: TurnoCajaUpdate, usuar
     db_turno = db.query(TurnoCaja).filter(TurnoCaja.id == turno_id).first()
     if not db_turno or not db_turno.abierta:
         raise HTTPException(status_code=400, detail="El turno de caja no existe o ya está cerrado.")
-        
+
+    # Pre-chequeo: las facturas del turno con saldo por cobrar pasan a Crédito,
+    # pero no se puede cerrar si alguna es de un cliente eventual/temporal (no
+    # tendría a quién cobrarle).
+    pendientes = facturas_pendientes_cierre(db, turno_id)
+    bloqueantes = [f for f in pendientes if not f.cliente or f.cliente.es_eventual]
+    if bloqueantes:
+        db.rollback()
+        detalle = "; ".join(
+            f"#{f.id} ({f.cliente_nombre or 'Cliente eventual'})" for f in bloqueantes
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"No se puede cerrar la caja: hay {len(bloqueantes)} factura(s) de "
+                f"cliente eventual sin pagar ({detalle}). Asígnales un cliente real "
+                "o cobra el saldo antes de cerrar."
+            ),
+        )
+    for factura in pendientes:
+        factura.estado = EstadoFactura.CREDITO
+
     db_turno.saldo_final_real_efectivo = datos_cierre.saldo_final_real_efectivo
     db_turno.saldo_final_real_banco = datos_cierre.saldo_final_real_banco
     db_turno.usuario_cierre_id = usuario_id

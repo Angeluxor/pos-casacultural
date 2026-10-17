@@ -4,13 +4,14 @@ from typing import Optional
 from datetime import date, datetime, time, timedelta
 
 from app.db.session import get_db
-from app.db.models import Usuario, Cliente
+from app.db.models import Usuario, Cliente, EstadoFactura
 from app.api.deps import get_current_active_user, require_admin
 from app.schemas.factura import (
     FacturaCreate,
     FacturaResponse,
     PagoCreate,
     FacturaAnular,
+    FacturaClienteUpdate,
     ItemFacturaCreate,
     ItemFacturaUpdate,
 )
@@ -36,6 +37,7 @@ def listar_facturas(
     buscar: Optional[str] = None,
     desde: Optional[str] = None,
     hasta: Optional[str] = None,
+    estado: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -51,6 +53,11 @@ def listar_facturas(
             except ValueError:
                 pass
         query = query.filter(cond)
+    if estado:
+        try:
+            query = query.filter(Factura.estado == EstadoFactura(estado))
+        except ValueError:
+            pass
     if desde:
         try:
             d = date.fromisoformat(desde)
@@ -78,6 +85,18 @@ def obtener_factura(factura_id: int, db: Session = Depends(get_db), current_user
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     return factura
+
+
+@router.put("/{factura_id}/cliente", response_model=FacturaResponse)
+def asignar_cliente(
+    factura_id: int,
+    datos: FacturaClienteUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    return crud_factura.asignar_cliente_factura(
+        db=db, factura_id=factura_id, cliente_id=datos.cliente_id
+    )
 
 
 @router.post("/{factura_id}/anular", response_model=FacturaResponse)

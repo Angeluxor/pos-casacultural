@@ -2,16 +2,33 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.db.models import (
     Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja,
-    Pago, EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
+    Pago, Cliente, EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
 )
 from app.core.timezone import get_colombia_time
+from app.crud import crud_cliente
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
 
 def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
+    # El cliente eventual (reemplazo de "Consumidor final") se usa cuando no se
+    # selecciona un cliente real; el nombre temporal queda como texto.
+    nombre_eventual = (factura_in.nombre_eventual or "").strip() or None
+    if factura_in.cliente_id:
+        cliente_id = factura_in.cliente_id
+        nombre_eventual = None
+    else:
+        cliente_id = crud_cliente.obtener_o_crear_cliente_eventual(db).id
+
+    # La venta queda atada al turno de caja abierto (si lo hay) para el paso a
+    # crédito al cerrar caja.
+    caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+
     # 1. Crear la cabecera de la factura primero para obtener un ID temporal
     db_factura = Factura(
-        cliente_id=factura_in.cliente_id,
+        cliente_id=cliente_id,
         vendedor_id=vendedor_id,
+        nombre_eventual=nombre_eventual,
+        turno_caja_id=caja_abierta.id if caja_abierta else None,
+        estado=EstadoFactura.ABIERTA,
         total=0,
         saldo=0
     )
@@ -282,8 +299,11 @@ def _recalcular_factura(db: Session, factura: Factura, usuario_id: int):
         factura.estado = EstadoFactura.PAGADA
     elif pagado > 0:
         factura.estado = EstadoFactura.PAGADO_PARCIAL
+    elif factura.estado == EstadoFactura.CREDITO:
+        # Una factura ya marcada como crédito conserva ese estado al editarla.
+        factura.estado = EstadoFactura.CREDITO
     else:
-        factura.estado = EstadoFactura.PENDIENTE
+        factura.estado = EstadoFactura.ABIERTA
 
 
 def agregar_item_factura(db: Session, factura_id: int, item_in: ItemFacturaCreate, usuario_id: int):
@@ -412,6 +432,36 @@ def eliminar_item_factura(db: Session, factura_id: int, detalle_id: int, usuario
     # No se borra la línea: se marca como retirada para conservar la traza.
     detalle.anulado = True
     _recalcular_factura(db, factura, usuario_id)
+
+    db.commit()
+    db.refresh(factura)
+    return factura
+
+
+def asignar_cliente_factura(db: Session, factura_id: int, cliente_id: int):
+    """Asigna un cliente real a una factura abierta (p. ej. para destrabar el cierre)."""
+    factura = db.query(Factura).filter(Factura.id == factura_id).with_for_update().first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    if factura.estado == EstadoFactura.ANULADA:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No se puede modificar una factura anulada.")
+
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not cliente:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if cliente.es_eventual:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede asignar el cliente eventual como cliente real.",
+        )
+
+    factura.cliente_id = cliente.id
+    # Al asignar un cliente real, el nombre temporal/eventual deja de aplicar.
+    factura.nombre_eventual = None
 
     db.commit()
     db.refresh(factura)

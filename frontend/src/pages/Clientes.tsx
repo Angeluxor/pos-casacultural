@@ -139,14 +139,14 @@ export function Clientes() {
   )
 }
 
-function FormCliente({
+export function FormCliente({
   cliente,
   onCerrar,
   onGuardado,
 }: {
   cliente: Cliente | null
   onCerrar: () => void
-  onGuardado: () => void
+  onGuardado: (creado?: Cliente) => void
 }) {
   const esEdicion = cliente !== null
   const [nombre, setNombre] = useState(cliente?.nombre ?? '')
@@ -166,12 +166,10 @@ function FormCliente({
     setGuardando(true)
     try {
       const datos = { nombre, celular: celular || null, correo: correoLimpio || null }
-      if (cliente) {
-        await actualizarCliente(cliente.id, datos)
-      } else {
-        await crearCliente(datos)
-      }
-      onGuardado()
+      const creado = cliente
+        ? await actualizarCliente(cliente.id, datos)
+        : await crearCliente(datos)
+      onGuardado(creado)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar el cliente')
     } finally {

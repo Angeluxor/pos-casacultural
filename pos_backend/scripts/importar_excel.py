@@ -77,7 +77,7 @@ FORMA_PAGO_MAP = {
 
 ESTADO_FACTURA_MAP = {
     "pagada": EstadoFactura.PAGADA,
-    "pendiente": EstadoFactura.PENDIENTE,
+    "pendiente": EstadoFactura.ABIERTA,
     "pagado parcial": EstadoFactura.PAGADO_PARCIAL,
     "anulada": EstadoFactura.ANULADA,
 }
@@ -91,8 +91,8 @@ def map_forma_pago(val):
 
 def map_estado_factura(val):
     if val is None:
-        return EstadoFactura.PENDIENTE
-    return ESTADO_FACTURA_MAP.get(str(val).strip().lower(), EstadoFactura.PENDIENTE)
+        return EstadoFactura.ABIERTA
+    return ESTADO_FACTURA_MAP.get(str(val).strip().lower(), EstadoFactura.ABIERTA)
 
 
 def main():

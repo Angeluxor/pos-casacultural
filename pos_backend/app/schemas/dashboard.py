@@ -7,7 +7,10 @@ class DashboardKpis(BaseModel):
     ventas_hoy_cantidad: int
     ventas_7d_total: float
     cartera_total: float
+    # Facturas con saldo aún no cerradas (Abierta / Pagado Parcial).
     facturas_pendientes: int
+    # Facturas que quedaron a crédito (deuda del cliente).
+    facturas_credito: int
 
 
 class VentaDia(BaseModel):

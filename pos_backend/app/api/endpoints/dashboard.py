@@ -74,17 +74,23 @@ def resumen_dashboard(
     facturas_pendientes = int(
         db.query(func.count(Factura.id))
         .filter(
-            Factura.estado.in_([EstadoFactura.PENDIENTE, EstadoFactura.PAGADO_PARCIAL]),
+            Factura.estado.in_([EstadoFactura.ABIERTA, EstadoFactura.PAGADO_PARCIAL]),
             Factura.saldo > 0,
         )
+        .scalar()
+    )
+    facturas_credito = int(
+        db.query(func.count(Factura.id))
+        .filter(Factura.estado == EstadoFactura.CREDITO, Factura.saldo > 0)
         .scalar()
     )
 
     # --- Facturas por estado ---
     claves = {
-        EstadoFactura.PENDIENTE: "Pendiente",
+        EstadoFactura.ABIERTA: "Abierta",
         EstadoFactura.PAGADO_PARCIAL: "Pagado Parcial",
         EstadoFactura.PAGADA: "Pagada",
+        EstadoFactura.CREDITO: "Crédito",
         EstadoFactura.ANULADA: "Anulada",
     }
     facturas_por_estado = {nombre: 0 for nombre in claves.values()}
@@ -137,6 +143,7 @@ def resumen_dashboard(
             ventas_7d_total=ventas_7d_total,
             cartera_total=cartera_total,
             facturas_pendientes=facturas_pendientes,
+            facturas_credito=facturas_credito,
         ),
         ventas_ultimos_7_dias=ventas_7d,
         productos_bajo_stock=productos_bajo_stock,

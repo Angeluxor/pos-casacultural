@@ -5,9 +5,12 @@ from .base_class import Base
 from app.core.timezone import get_colombia_time
 
 class EstadoFactura(str, enum.Enum):
-    PENDIENTE = "Pendiente"
+    ABIERTA = "Abierta"
     PAGADO_PARCIAL = "Pagado Parcial"
     PAGADA = "Pagada"
+    # Las facturas con saldo pendiente al cerrar la caja pasan a "Crédito"
+    # (deuda del cliente). Sigue admitiendo abonos posteriores.
+    CREDITO = "Crédito"
     ANULADA = "Anulada"
 
 class FormaPago(str, enum.Enum):
@@ -91,6 +94,9 @@ class Cliente(Base):
     documento = Column(String, unique=True, index=True, nullable=True)
     celular = Column(String, nullable=True)
     correo = Column(String, nullable=True)
+    # Marca al único registro genérico "Cliente eventual" (reemplaza al
+    # antiguo "Consumidor final"). No se gestiona como un cliente normal.
+    es_eventual = Column(Boolean, default=False, nullable=False)
     facturas = relationship("Factura", back_populates="cliente")
 
 class Producto(Base):
@@ -128,7 +134,13 @@ class Factura(Base):
     fecha = Column(DateTime(timezone=True), default=get_colombia_time)
     total = Column(Float, default=0.0)
     saldo = Column(Float, default=0.0)
-    estado = Column(Enum(EstadoFactura), default=EstadoFactura.PENDIENTE)
+    estado = Column(Enum(EstadoFactura), default=EstadoFactura.ABIERTA)
+    # Turno de caja en el que se registró la venta (para el paso a crédito al
+    # cerrar caja). Puede ser nulo en ventas hechas sin caja abierta.
+    turno_caja_id = Column(Integer, ForeignKey("turnos_caja.id"), nullable=True)
+    # Nombre temporal/eventual que da el cajero cuando el cliente no se
+    # registra (solo texto; no crea un cliente real).
+    nombre_eventual = Column(String, nullable=True)
 
     # Trazabilidad de anulación
     motivo_anulacion = Column(String, nullable=True)
@@ -136,10 +148,18 @@ class Factura(Base):
     anulada_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
     cliente = relationship("Cliente", back_populates="facturas")
+    turno = relationship("TurnoCaja")
     vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
     anulada_por = relationship("Usuario", foreign_keys=[anulada_por_id])
     detalles = relationship("DetalleFactura", back_populates="factura")
     pagos = relationship("Pago", back_populates="factura")
+
+    @property
+    def cliente_nombre(self) -> str | None:
+        """Nombre a mostrar: el temporal/eventual si existe, si no el del cliente."""
+        if self.nombre_eventual:
+            return self.nombre_eventual
+        return self.cliente.nombre if self.cliente else None
 
 class DetalleFactura(Base):
     __tablename__ = "detalles_factura"

@@ -4,6 +4,24 @@ from typing import Optional
 from app.db.models import Cliente, Factura
 from app.schemas.cliente import ClienteCreate, ClienteUpdate
 
+# Nombre del registro genérico que reemplaza al antiguo "Consumidor final".
+CLIENTE_EVENTUAL_NOMBRE = "Cliente eventual"
+
+
+def obtener_cliente_eventual(db: Session):
+    return db.query(Cliente).filter(Cliente.es_eventual == True).first()
+
+
+def obtener_o_crear_cliente_eventual(db: Session):
+    """Devuelve el único registro "Cliente eventual", creándolo si no existe."""
+    cliente = obtener_cliente_eventual(db)
+    if cliente:
+        return cliente
+    cliente = Cliente(nombre=CLIENTE_EVENTUAL_NOMBRE, es_eventual=True)
+    db.add(cliente)
+    db.flush()
+    return cliente
+
 
 def obtener_cliente_por_documento(db: Session, documento: str):
     return db.query(Cliente).filter(Cliente.documento == documento).first()
@@ -14,7 +32,8 @@ def obtener_cliente(db: Session, cliente_id: int):
 
 
 def obtener_clientes(db: Session, skip: int = 0, limit: int = 100, buscar: Optional[str] = None):
-    query = db.query(Cliente)
+    # El cliente eventual es un registro de sistema: no se lista ni se elige.
+    query = db.query(Cliente).filter(Cliente.es_eventual == False)
     if buscar:
         filtro = f"%{buscar.strip()}%"
         query = query.filter(

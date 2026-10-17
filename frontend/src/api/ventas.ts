@@ -2,7 +2,15 @@ import { apiFetch, apiJson } from './client'
 import type { Pagina } from './types'
 import type { FormaPago } from './types'
 
-export type EstadoFactura = 'Pendiente' | 'Pagado Parcial' | 'Pagada' | 'Anulada'
+export type EstadoFactura = 'Abierta' | 'Pagado Parcial' | 'Pagada' | 'Crédito' | 'Anulada'
+
+export const ESTADOS_FACTURA: EstadoFactura[] = [
+  'Abierta',
+  'Pagado Parcial',
+  'Pagada',
+  'Crédito',
+  'Anulada',
+]
 
 export type DetalleFactura = {
   id: number
@@ -24,7 +32,10 @@ export type Pago = {
 export type Factura = {
   id: number
   cliente_id: number | null
+  cliente_nombre: string | null
+  nombre_eventual: string | null
   vendedor_id: number
+  turno_caja_id: number | null
   fecha: string
   total: number
   saldo: number
@@ -38,6 +49,7 @@ export type Factura = {
 
 export type FacturaCreate = {
   cliente_id?: number | null
+  nombre_eventual?: string | null
   detalles: { producto_id: number; cantidad: number }[]
 }
 
@@ -52,6 +64,7 @@ export function listarFacturasPaginado(params: {
   buscar?: string
   desde?: string
   hasta?: string
+  estado?: EstadoFactura | ''
 }): Promise<Pagina<Factura>> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
@@ -59,6 +72,7 @@ export function listarFacturasPaginado(params: {
   if (params.buscar) q.set('buscar', params.buscar)
   if (params.desde) q.set('desde', params.desde)
   if (params.hasta) q.set('hasta', params.hasta)
+  if (params.estado) q.set('estado', params.estado)
   return apiFetch<Pagina<Factura>>(`/api/facturas/?${q.toString()}`)
 }
 
@@ -68,6 +82,13 @@ export function obtenerFactura(id: number): Promise<Factura> {
 
 export function crearFactura(data: FacturaCreate): Promise<Factura> {
   return apiJson<Factura>('/api/facturas/', 'POST', data)
+}
+
+export function asignarClienteFactura(
+  id: number,
+  clienteId: number,
+): Promise<Factura> {
+  return apiJson<Factura>(`/api/facturas/${id}/cliente`, 'PUT', { cliente_id: clienteId })
 }
 
 export function pagarFactura(id: number, data: PagoCreate): Promise<Factura> {

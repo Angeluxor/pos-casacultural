@@ -32,6 +32,7 @@ export type DashboardKpis = {
   ventas_7d_total: number
   cartera_total: number
   facturas_pendientes: number
+  facturas_credito: number
 }
 
 export type DashboardResumen = {

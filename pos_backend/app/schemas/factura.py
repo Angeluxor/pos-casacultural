@@ -18,20 +18,29 @@ class DetalleFacturaResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class FacturaCreate(BaseModel):
-    cliente_id: Optional[int] = None
-    vendedor_id: Optional[int] = None
-    detalles: List[DetalleFacturaCreate]
-
-class FacturaAnular(BaseModel):
-    motivo: Optional[str] = None
-
 class ItemFacturaCreate(BaseModel):
     producto_id: int
     cantidad: int
 
+
 class ItemFacturaUpdate(BaseModel):
     cantidad: int
+
+
+class FacturaCreate(BaseModel):
+    cliente_id: Optional[int] = None
+    # Nombre temporal/eventual cuando el cliente no se registra.
+    nombre_eventual: Optional[str] = None
+    detalles: List[ItemFacturaCreate] = []
+
+
+class FacturaClienteUpdate(BaseModel):
+    cliente_id: int
+
+
+class FacturaAnular(BaseModel):
+    motivo: Optional[str] = None
+
 
 class PagoCreate(BaseModel):
     cajero_id: Optional[int] = None
@@ -51,7 +60,10 @@ class PagoResponse(BaseModel):
 class FacturaResponse(BaseModel):
     id: int
     cliente_id: Optional[int]
+    cliente_nombre: Optional[str] = None
+    nombre_eventual: Optional[str] = None
     vendedor_id: int
+    turno_caja_id: Optional[int] = None
     fecha: datetime
     total: float
     saldo: float

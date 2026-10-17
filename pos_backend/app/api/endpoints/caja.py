@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import Usuario
 from app.api.deps import get_current_active_user
-from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse
+from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse, FacturaPendienteCierre
 from app.schemas.common import Pagina
 from app.crud import crud_caja
 
@@ -57,3 +57,21 @@ def registrar_movimiento(movimiento: RegistroCajaCreate, db: Session = Depends(g
 @router.get("/{turno_id}/movimientos", response_model=List[RegistroCajaResponse])
 def obtener_movimientos_caja(turno_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
     return crud_caja.obtener_movimientos(db=db, turno_id=turno_id)
+
+
+@router.get("/{turno_id}/pendientes", response_model=List[FacturaPendienteCierre])
+def facturas_pendientes_cierre(turno_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+    """Facturas del turno con saldo por cobrar (pasan a Crédito al cerrar)."""
+    facturas = crud_caja.facturas_pendientes_cierre(db=db, turno_id=turno_id)
+    return [
+        FacturaPendienteCierre(
+            id=f.id,
+            cliente_id=f.cliente_id,
+            cliente_nombre=f.cliente_nombre,
+            nombre_eventual=f.nombre_eventual,
+            total=f.total,
+            saldo=f.saldo,
+            es_eventual=(f.cliente.es_eventual if f.cliente else True),
+        )
+        for f in facturas
+    ]

@@ -4,11 +4,12 @@ import { moneda } from '../lib/formato'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 
-const ORDEN_ESTADOS = ['Pendiente', 'Pagado Parcial', 'Pagada', 'Anulada']
+const ORDEN_ESTADOS = ['Abierta', 'Pagado Parcial', 'Pagada', 'Crédito', 'Anulada']
 const CLASE_ESTADO: Record<string, string> = {
-  Pendiente: 'badge badge--warn',
+  Abierta: 'badge badge--warn',
   'Pagado Parcial': 'badge badge--info',
   Pagada: 'badge badge--on',
+  Crédito: 'badge badge--credito',
   Anulada: 'badge badge--off',
 }
 
@@ -85,6 +86,13 @@ export function Dashboard() {
                 {datos.kpis.facturas_pendientes} factura
                 {datos.kpis.facturas_pendientes === 1 ? '' : 's'} pendiente
                 {datos.kpis.facturas_pendientes === 1 ? '' : 's'}
+              </small>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Crédito</span>
+              <strong>{datos.kpis.facturas_credito}</strong>
+              <small>
+                factura{datos.kpis.facturas_credito === 1 ? '' : 's'} a crédito
               </small>
             </div>
             <div className="mini-tarjeta">

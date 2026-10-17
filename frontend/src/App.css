@@ -528,6 +528,11 @@ select:focus {
   color: var(--advertencia);
 }
 
+.badge--credito {
+  background: rgba(96, 65, 128, 0.16);
+  color: #6a4a86;
+}
+
 .aviso {
   color: var(--advertencia);
   font-size: 14px;
