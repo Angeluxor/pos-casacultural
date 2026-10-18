@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import Usuario
 from app.api.deps import get_current_active_user
-from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse, FacturaPendienteCierre
+from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse, FacturaPendienteCierre, ResumenVentasTurno
 from app.schemas.common import Pagina
 from app.crud import crud_caja
 
@@ -79,3 +79,13 @@ def facturas_pendientes_cierre(turno_id: int, db: Session = Depends(get_db), cur
         )
         for f in facturas
     ]
+
+
+@router.get("/{turno_id}/resumen-ventas", response_model=ResumenVentasTurno)
+def resumen_ventas_turno(
+    turno_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Ventas del turno, su parte a crédito y el total cobrado (para el cierre)."""
+    return crud_caja.resumen_ventas_turno(db=db, turno_id=turno_id)

@@ -77,3 +77,11 @@ class FacturaPendienteCierre(BaseModel):
     total: float
     saldo: float
     es_eventual: bool
+
+
+class ResumenVentasTurno(BaseModel):
+    """Ventas del turno y su parte a crédito (no cobrada), para el cierre."""
+
+    ventas: float
+    creditos: float
+    cobrado: float

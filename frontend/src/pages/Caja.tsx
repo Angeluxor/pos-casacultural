@@ -8,9 +8,11 @@ import {
   obtenerCajaActiva,
   obtenerFacturasPendientes,
   obtenerMovimientos,
+  obtenerResumenVentasTurno,
   registrarMovimiento,
   type FacturaPendienteCierre,
   type RegistroCaja,
+  type ResumenVentasTurno,
   type TurnoCaja,
   type TurnoCajaHistorial,
 } from '../api/caja'
@@ -466,6 +468,7 @@ function FormCerrar({
   const [guardando, setGuardando] = useState(false)
   const [pendientes, setPendientes] = useState<FacturaPendienteCierre[]>([])
   const [cargandoPendientes, setCargandoPendientes] = useState(true)
+  const [resumen, setResumen] = useState<ResumenVentasTurno | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -479,6 +482,13 @@ function FormCerrar({
       })
       .finally(() => {
         if (activo) setCargandoPendientes(false)
+      })
+    obtenerResumenVentasTurno(turno.id)
+      .then((r) => {
+        if (activo) setResumen(r)
+      })
+      .catch(() => {
+        if (activo) setResumen(null)
       })
     return () => {
       activo = false
@@ -533,6 +543,18 @@ function FormCerrar({
         {error && <p className="error">{error}</p>}
         <div className="resumen">
           <div className="resumen__item">
+            <span className="ayuda">Ventas del turno</span>
+            <strong>{moneda.format(resumen?.ventas ?? 0)}</strong>
+          </div>
+          <div className="resumen__item">
+            <span className="ayuda">Crédito (no cobrado)</span>
+            <strong>−{moneda.format(resumen?.creditos ?? 0)}</strong>
+          </div>
+          <div className="resumen__item">
+            <span className="ayuda">Total cobrado del turno</span>
+            <strong>{moneda.format(resumen?.cobrado ?? 0)}</strong>
+          </div>
+          <div className="resumen__item">
             <span className="ayuda">Esperado efectivo</span>
             <strong>{moneda.format(esperadoEfectivo)}</strong>
           </div>
@@ -574,7 +596,8 @@ function FormCerrar({
         ) : pendientes.length > 0 ? (
           <div className="pendientes-cierre">
             <p className="ayuda">
-              Facturas de este turno con saldo pendiente ({pendientes.length}):
+              Facturas de este turno con saldo pendiente — pasarán a Crédito (
+              {pendientes.length}):
             </p>
             <ul className="lista-pendientes">
               {pendientes.map((p) => (

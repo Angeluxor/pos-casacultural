@@ -105,6 +105,16 @@ export function obtenerFacturasPendientes(turnoId: number): Promise<FacturaPendi
   return apiFetch<FacturaPendienteCierre[]>(`/api/caja/${turnoId}/pendientes`)
 }
 
+export type ResumenVentasTurno = {
+  ventas: number
+  creditos: number
+  cobrado: number
+}
+
+export function obtenerResumenVentasTurno(turnoId: number): Promise<ResumenVentasTurno> {
+  return apiFetch<ResumenVentasTurno>(`/api/caja/${turnoId}/resumen-ventas`)
+}
+
 export function listarTurnos(params: {
   skip: number
   limit: number

@@ -36,6 +36,37 @@ def facturas_pendientes_cierre(db: Session, turno_id: int):
     )
 
 
+def resumen_ventas_turno(db: Session, turno_id: int) -> dict:
+    """Ventas facturadas del turno y cuánto queda a crédito (no cobrado).
+
+    "Ventas" es todo lo facturado en el turno salvo lo anulado; "créditos" es el
+    saldo por cobrar de esas facturas (lo que al cerrar la caja pasa a Crédito).
+    El "cobrado" es la diferencia, es decir, el dinero que sí entró por ventas.
+    """
+    ventas = float(
+        db.query(func.coalesce(func.sum(Factura.total), 0.0))
+        .filter(
+            Factura.turno_caja_id == turno_id,
+            Factura.estado != EstadoFactura.ANULADA,
+        )
+        .scalar()
+    )
+    creditos = float(
+        db.query(func.coalesce(func.sum(Factura.saldo), 0.0))
+        .filter(
+            Factura.turno_caja_id == turno_id,
+            Factura.estado != EstadoFactura.ANULADA,
+            Factura.saldo > 0,
+        )
+        .scalar()
+    )
+    return {
+        "ventas": round(ventas, 2),
+        "creditos": round(creditos, 2),
+        "cobrado": round(ventas - creditos, 2),
+    }
+
+
 def forma_es_banco(forma_pago) -> bool:
     return forma_pago in FORMAS_BANCO
 
