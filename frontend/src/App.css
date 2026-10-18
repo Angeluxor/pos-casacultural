@@ -84,6 +84,40 @@ select:focus {
   border-color: transparent;
 }
 
+/* Campo de contraseña con el "ojito" para mostrar/ocultar lo digitado. */
+.campo-password {
+  position: relative;
+  display: block;
+}
+
+.campo-password input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+.campo-password__ojo {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texto-suave);
+  cursor: pointer;
+}
+
+.campo-password__ojo:hover {
+  color: var(--texto);
+  background: var(--acento-suave);
+}
+
 .boton {
   margin-top: 4px;
   padding: 11px 14px;

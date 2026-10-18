@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { actualizarPerfil, cambiarPassword } from '../api/auth'
 import { useAuth } from '../auth/useAuth'
+import { CampoPassword } from '../components/CampoPassword'
 
 export function Perfil() {
   const { usuario, refrescar } = useAuth()
@@ -138,8 +139,7 @@ function FormPassword() {
         {ok && <p className="ok">{ok}</p>}
         <label>
           Contraseña actual
-          <input
-            type="password"
+          <CampoPassword
             value={actual}
             onChange={(e) => setActual(e.target.value)}
             autoComplete="current-password"
@@ -148,8 +148,7 @@ function FormPassword() {
         </label>
         <label>
           Nueva contraseña
-          <input
-            type="password"
+          <CampoPassword
             value={nueva}
             onChange={(e) => setNueva(e.target.value)}
             autoComplete="new-password"
@@ -159,8 +158,7 @@ function FormPassword() {
         </label>
         <label>
           Repetir nueva contraseña
-          <input
-            type="password"
+          <CampoPassword
             value={repetir}
             onChange={(e) => setRepetir(e.target.value)}
             autoComplete="new-password"

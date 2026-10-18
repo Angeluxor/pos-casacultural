@@ -11,6 +11,7 @@ Al abrir la aplicación aparece la pantalla de acceso. Escribe tu **usuario** y 
 - El usuario no distingue entre mayúsculas y minúsculas.
 - Si los datos no coinciden, verás el mensaje exacto del sistema.
 - Si olvidas tu contraseña, pídele a un administrador que te la restablezca.
+- El **ojito** 👁 junto al campo de contraseña muestra u oculta lo que escribes, para revisarlo antes de entrar (también al crear usuarios y al cambiar tu clave).
 
 > **Primer ingreso del administrador**: la primera vez se usa el usuario `admin` y la contraseña que definió quien instaló el sistema. **Cambia esa contraseña de inmediato** en *Mi perfil*.
 

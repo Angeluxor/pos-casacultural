@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { CampoPassword } from '../components/CampoPassword'
 
 export function Login() {
   const { usuario, cargando, login } = useAuth()
@@ -51,8 +52,7 @@ export function Login() {
           </label>
           <label>
             Contraseña
-            <input
-              type="password"
+            <CampoPassword
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"

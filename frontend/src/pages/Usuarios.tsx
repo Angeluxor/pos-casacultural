@@ -8,6 +8,7 @@ import {
 } from '../api/usuarios'
 import type { RolUsuario, Usuario } from '../api/types'
 import { useAuth } from '../auth/useAuth'
+import { CampoPassword } from '../components/CampoPassword'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenServidor } from '../lib/orden'
@@ -229,8 +230,7 @@ function FormUsuario({
         </label>
         <label>
           Contraseña {esEdicion ? '(dejar vacío para no cambiar)' : ''}
-          <input
-            type="password"
+          <CampoPassword
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required={!esEdicion}
