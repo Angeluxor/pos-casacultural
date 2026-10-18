@@ -5,8 +5,9 @@ líneas que pueden ser: un producto existente, un producto nuevo (se crea con
 código autogenerado) o un ítem libre de tipo "Otros". El total es obligatorio y
 no se edita; el estado se deriva de cuánto se conoce de las líneas.
 
-Los ingresos quedan atados al turno de caja abierto. Solo las formas de pago
-Efectivo y Transferencia generan un movimiento de caja (Crédito y Donación no).
+Los ingresos quedan atados al turno de caja abierto. Si se pagan en Efectivo o
+Transferencia, descuentan de la caja del turno (es una salida de dinero al
+proveedor); Crédito y Donación no mueven la caja.
 """
 from datetime import date, datetime, time, timedelta
 from typing import Optional
@@ -172,7 +173,7 @@ def crear_ingreso(db: Session, turno_caja_id: int, datos: IngresoCreate, usuario
             RegistroCaja(
                 turno_caja_id=turno_caja_id,
                 usuario_id=usuario_id,
-                tipo=TipoMovimientoCaja.ENTRADA,
+                tipo=TipoMovimientoCaja.SALIDA,
                 referencia=f"Ingreso #{ingreso.id}",
                 forma_pago=_FORMA_CAJA[datos.forma_pago],
                 monto=datos.total,

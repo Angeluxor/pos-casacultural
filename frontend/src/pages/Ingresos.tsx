@@ -73,7 +73,7 @@ export function Ingresos() {
       ) : ingresos.length === 0 ? (
         <Vacio
           titulo="Aún no hay ingresos"
-          detalle="Registra la entrada de mercancía para sumar stock y dejar el movimiento en caja."
+          detalle="Registra la entrada de mercancía: suma stock y, si la pagas en efectivo o transferencia, descuenta de la caja."
         />
       ) : (
         <>

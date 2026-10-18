@@ -58,14 +58,16 @@ def test_ingreso_completo_mueve_stock_y_caja(client, token_cajero):
     assert detalle["stock"] == 10
 
     movs = client.get(f"/api/caja/{turno_id}/movimientos", headers=auth(token_cajero)).json()
-    entradas = [m for m in movs if m["tipo"] == "Entrada"]
-    assert len(entradas) == 1
-    assert entradas[0]["monto"] == 50000
-    assert entradas[0]["forma_pago"] == "Efectivo"
+    salidas = [m for m in movs if m["tipo"] == "Salida"]
+    assert len(salidas) == 1
+    assert salidas[0]["monto"] == 50000
+    assert salidas[0]["forma_pago"] == "Efectivo"
+    # La compra es dinero que sale: nunca debe quedar como entrada.
+    assert [m for m in movs if m["tipo"] == "Entrada"] == []
 
 
 def test_ingreso_producto_nuevo_genera_codigo(client, token_cajero):
-    _abrir_caja(client, token_cajero)
+    turno_id = _abrir_caja(client, token_cajero)
     resp = client.post(
         "/api/ingresos/",
         headers=auth(token_cajero),
@@ -88,6 +90,13 @@ def test_ingreso_producto_nuevo_genera_codigo(client, token_cajero):
     assert producto["codigo"].startswith("INV")
     assert producto["stock"] == 3
 
+    # Transferencia: sale del bolsillo banco del turno.
+    movs = client.get(f"/api/caja/{turno_id}/movimientos", headers=auth(token_cajero)).json()
+    salidas = [m for m in movs if m["tipo"] == "Salida"]
+    assert len(salidas) == 1
+    assert salidas[0]["forma_pago"] == "Transferencia"
+    assert salidas[0]["monto"] == 30000
+
 
 def test_credito_no_mueve_caja(client, token_cajero):
     turno_id = _abrir_caja(client, token_cajero)
@@ -104,7 +113,7 @@ def test_credito_no_mueve_caja(client, token_cajero):
     assert resp.json()["estado"] == "Completo"
 
     movs = client.get(f"/api/caja/{turno_id}/movimientos", headers=auth(token_cajero)).json()
-    assert [m for m in movs if m["tipo"] == "Entrada"] == []
+    assert [m for m in movs if m["tipo"] in ("Entrada", "Salida")] == []
 
 
 def test_ingreso_parcial_al_faltar_costo(client, token_cajero):
