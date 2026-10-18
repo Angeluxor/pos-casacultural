@@ -15,7 +15,7 @@ import { Vacio } from '../components/Vacio'
 import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
 
-const ROLES: RolUsuario[] = ['Admin', 'Cajero']
+const ROLES: RolUsuario[] = ['Admin', 'Cajero', 'Mesero']
 
 export function Usuarios() {
   const { usuario: actual } = useAuth()

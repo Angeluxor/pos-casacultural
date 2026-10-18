@@ -29,8 +29,8 @@ const CLASE_ESTADO: Record<string, string> = {
 }
 
 export function Ingresos() {
-  const { usuario } = useAuth()
-  const esAdmin = usuario?.rol === 'Admin'
+  const { tienePermiso } = useAuth()
+  const puedeCrear = tienePermiso('ingresos.crear')
   const [params, setParams] = useSearchParams()
 
   const { orden, direccion, alternar } = useOrdenServidor()
@@ -47,12 +47,12 @@ export function Ingresos() {
   const [detalle, setDetalle] = useState<Ingreso | null>(null)
 
   useEffect(() => {
-    if (params.get('nuevo')) {
+    if (params.get('nuevo') && puedeCrear) {
       setFormNuevo(true)
       params.delete('nuevo')
       setParams(params, { replace: true })
     }
-  }, [params, setParams])
+  }, [params, setParams, puedeCrear])
 
   return (
     <div className="pagina">
@@ -61,9 +61,11 @@ export function Ingresos() {
           <h1>Ingresos de inventario</h1>
           <p className="ayuda">{total} ingresos registrados</p>
         </div>
-        <button className="boton" onClick={() => setFormNuevo(true)}>
-          + Nuevo ingreso
-        </button>
+        {puedeCrear && (
+          <button className="boton" onClick={() => setFormNuevo(true)}>
+            + Nuevo ingreso
+          </button>
+        )}
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -164,7 +166,8 @@ export function Ingresos() {
       {detalle && (
         <DetalleIngreso
           ingreso={detalle}
-          esAdmin={esAdmin}
+          puedeResolver={tienePermiso('ingresos.resolver')}
+          puedeEditar={tienePermiso('ingresos.editar')}
           onCerrar={() => setDetalle(null)}
           onActualizado={(ing) => {
             setDetalle(ing)
@@ -479,12 +482,14 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
 
 function DetalleIngreso({
   ingreso,
-  esAdmin,
+  puedeResolver,
+  puedeEditar,
   onCerrar,
   onActualizado,
 }: {
   ingreso: Ingreso
-  esAdmin: boolean
+  puedeResolver: boolean
+  puedeEditar: boolean
   onCerrar: () => void
   onActualizado: (ing: Ingreso) => void
 }) {
@@ -555,7 +560,11 @@ function DetalleIngreso({
 
         <label>
           Proveedor
-          <input value={proveedor} onChange={(e) => setProveedor(e.target.value)} />
+          <input
+            value={proveedor}
+            onChange={(e) => setProveedor(e.target.value)}
+            disabled={!puedeEditar}
+          />
         </label>
 
         <div className="tabla-wrap tabla-wrap--cards">
@@ -587,6 +596,7 @@ function DetalleIngreso({
                         min="0"
                         step="0.01"
                         value={costos[i.id] ?? ''}
+                        disabled={!puedeEditar}
                         onChange={(e) =>
                           setCostos((c) => ({ ...c, [i.id]: e.target.value }))
                         }
@@ -602,7 +612,7 @@ function DetalleIngreso({
           </table>
         </div>
 
-        {ingreso.estado === 'Inconsistente' && esAdmin && (
+        {ingreso.estado === 'Inconsistente' && puedeResolver && (
           <div className="panel-anular">
             <p className="ayuda">
               La suma de los ítems supera el total. Un administrador puede marcar el ingreso como
@@ -633,9 +643,11 @@ function DetalleIngreso({
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cerrar
           </button>
-          <button type="button" className="boton" onClick={guardar} disabled={guardando}>
-            {guardando ? 'Guardando…' : 'Guardar cambios'}
-          </button>
+          {puedeEditar && (
+            <button type="button" className="boton" onClick={guardar} disabled={guardando}>
+              {guardando ? 'Guardando…' : 'Guardar cambios'}
+            </button>
+          )}
         </div>
       </div>
     </div>

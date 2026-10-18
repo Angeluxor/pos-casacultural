@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 import jwt
 
 from app.db.session import get_db
-from app.db.models import Usuario, RolUsuario
+from app.db.models import Usuario
 from app.crud import crud_usuario
+from app.core.permisos import permisos_efectivos
 from app.core.security import decode_access_token, TOKEN_TYPE
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -44,7 +45,24 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
     return current_user
 
 
-def require_admin(current_user: Usuario = Depends(get_current_active_user)) -> Usuario:
-    if current_user.rol != RolUsuario.ADMIN:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere rol Admin")
-    return current_user
+def require_permiso(*claves: str):
+    """Dependencia que exige al menos uno de los permisos indicados.
+
+    Devuelve el usuario autenticado para que el endpoint lo siga usando como
+    ``current_user``. El rol Admin siempre pasa (tiene todos los permisos).
+    """
+
+    def _dependencia(
+        current_user: Usuario = Depends(get_current_active_user),
+        db: Session = Depends(get_db),
+    ) -> Usuario:
+        if not any(
+            clave in permisos_efectivos(db, current_user.rol) for clave in claves
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No tienes permiso para esta acción",
+            )
+        return current_user
+
+    return _dependencia

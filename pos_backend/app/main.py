@@ -12,7 +12,7 @@ from app.core.security_headers import SecurityHeadersMiddleware
 from app.db import models  # noqa: F401
 
 # Importar routers
-from app.api.endpoints import auth, caja, usuario, producto, factura, cliente, dashboard, reportes, ingreso
+from app.api.endpoints import auth, caja, usuario, producto, factura, cliente, dashboard, reportes, ingreso, permiso
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.include_router(ingreso.router, prefix="/api/ingresos", tags=["Ingresos de in
 app.include_router(factura.router, prefix="/api/facturas", tags=["Facturas y Ventas"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(reportes.router, prefix="/api/reportes", tags=["Reportes"])
+app.include_router(permiso.router, prefix="/api/permisos", tags=["Permisos"])
 
 
 @app.get("/")

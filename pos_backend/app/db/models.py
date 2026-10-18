@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Enum, Boolean, JSON
 from sqlalchemy.orm import relationship
 import enum
 from .base_class import Base
@@ -28,6 +28,8 @@ class TipoMovimientoCaja(str, enum.Enum):
 class RolUsuario(str, enum.Enum):
     ADMIN = "Admin"
     CAJERO = "Cajero"
+    # Rol de salón: toma pedidos y cobra, sin acceso a administración.
+    MESERO = "Mesero"
 
 class TipoMovimientoInventario(str, enum.Enum):
     ENTRADA_COMPRA = "Entrada por Compra"
@@ -67,6 +69,18 @@ class Usuario(Base):
     # Versión de los tokens de este usuario. Al cambiar la contraseña se
     # incrementa y los tokens emitidos antes dejan de ser válidos (revocación).
     token_version = Column(Integer, default=0, nullable=False)
+
+class PermisoRol(Base):
+    """Permisos configurados para un rol (solo Cajero y Mesero).
+
+    El rol Admin siempre tiene todos los permisos y no se guarda aquí. Si un rol
+    no tiene fila se usan los permisos por defecto de `app/core/permisos.py`.
+    """
+    __tablename__ = "permisos_rol"
+    id = Column(Integer, primary_key=True, index=True)
+    rol = Column(Enum(RolUsuario), index=True, unique=True, nullable=False)
+    # Lista de claves de permiso concedidas (ver `app/core/permisos.py`).
+    permisos = Column(JSON, nullable=False, default=list)
 
 class TurnoCaja(Base):
     __tablename__ = "turnos_caja"

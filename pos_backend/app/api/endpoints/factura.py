@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.db.session import get_db
 from app.db.models import Usuario, Cliente, EstadoFactura
-from app.api.deps import get_current_active_user, require_admin
+from app.api.deps import require_permiso
 from app.schemas.factura import (
     FacturaCreate,
     FacturaResponse,
@@ -25,11 +25,11 @@ from app.core.orden import ordenar
 router = APIRouter()
 
 @router.post("/", response_model=FacturaResponse)
-def crear_factura(factura: FacturaCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+def crear_factura(factura: FacturaCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.crear"))):
     return crud_factura.crear_factura(db=db, factura_in=factura, vendedor_id=current_user.id)
 
 @router.post("/{factura_id}/pagos", response_model=FacturaResponse)
-def registrar_pagos(factura_id: int, pagos: PagoCreate | list[PagoCreate], db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+def registrar_pagos(factura_id: int, pagos: PagoCreate | list[PagoCreate], db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.cobrar"))):
     lista = pagos if isinstance(pagos, list) else [pagos]
     return crud_factura.registrar_pagos_factura(db=db, factura_id=factura_id, pagos=lista, cajero_id=current_user.id)
 
@@ -44,7 +44,7 @@ def listar_facturas(
     orden: Optional[str] = None,
     direccion: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ventas.ver")),
 ):
     query = db.query(Factura).options(selectinload(Factura.detalles), selectinload(Factura.pagos))
     # Necesitamos la tabla clientes si se busca por nombre o se ordena por cliente.
@@ -102,7 +102,7 @@ def listar_facturas(
     return Pagina(items=items, total=total, skip=skip, limit=limit)
 
 @router.get("/{factura_id}", response_model=FacturaResponse)
-def obtener_factura(factura_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)):
+def obtener_factura(factura_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.ver"))):
     factura = (
         db.query(Factura)
         .options(selectinload(Factura.detalles), selectinload(Factura.pagos))
@@ -119,7 +119,7 @@ def asignar_cliente(
     factura_id: int,
     datos: FacturaClienteUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ventas.editar")),
 ):
     return crud_factura.asignar_cliente_factura(
         db=db, factura_id=factura_id, cliente_id=datos.cliente_id
@@ -131,7 +131,7 @@ def anular_factura(
     factura_id: int,
     datos: FacturaAnular | None = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_admin),
+    current_user: Usuario = Depends(require_permiso("ventas.anular")),
 ):
     return crud_factura.anular_factura(
         db=db,
@@ -146,7 +146,7 @@ def agregar_item(
     factura_id: int,
     item: ItemFacturaCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ventas.editar")),
 ):
     return crud_factura.agregar_item_factura(db, factura_id, item, current_user.id)
 
@@ -157,7 +157,7 @@ def actualizar_item(
     detalle_id: int,
     item: ItemFacturaUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ventas.editar")),
 ):
     return crud_factura.actualizar_item_factura(db, factura_id, detalle_id, item, current_user.id)
 
@@ -167,6 +167,6 @@ def eliminar_item(
     factura_id: int,
     detalle_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ventas.editar")),
 ):
     return crud_factura.eliminar_item_factura(db, factura_id, detalle_id, current_user.id)

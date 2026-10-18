@@ -87,6 +87,11 @@ def cajero_id() -> int:
     return _crear_usuario("cajero", "cajero123", RolUsuario.CAJERO)
 
 
+@pytest.fixture
+def mesero_id() -> int:
+    return _crear_usuario("mesero", "mesero123", RolUsuario.MESERO)
+
+
 def login(client: TestClient, username: str, password: str) -> str:
     respuesta = client.post(
         "/api/auth/login",
@@ -104,6 +109,11 @@ def token_admin(client: TestClient, admin_id: int) -> str:
 @pytest.fixture
 def token_cajero(client: TestClient, cajero_id: int) -> str:
     return login(client, "cajero", "cajero123")
+
+
+@pytest.fixture
+def token_mesero(client: TestClient, mesero_id: int) -> str:
+    return login(client, "mesero", "mesero123")
 
 
 def auth(token: str) -> dict:

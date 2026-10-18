@@ -1,5 +1,5 @@
 import { apiFetch, apiForm, apiJson, setToken } from './client'
-import type { Usuario } from './types'
+import type { Usuario, UsuarioSesion } from './types'
 
 export type PerfilUpdate = { nombre?: string }
 export type PasswordUpdate = { password_actual: string; password_nueva: string }
@@ -9,8 +9,8 @@ export async function iniciarSesion(username: string, password: string): Promise
   setToken(data.access_token)
 }
 
-export async function obtenerUsuarioActual(): Promise<Usuario> {
-  return apiFetch<Usuario>('/api/auth/me')
+export async function obtenerUsuarioActual(): Promise<UsuarioSesion> {
+  return apiFetch<UsuarioSesion>('/api/auth/me')
 }
 
 export function actualizarPerfil(data: PerfilUpdate): Promise<Usuario> {

@@ -57,8 +57,11 @@ function claseEstado(estado: EstadoFactura): string {
 }
 
 export function Ventas() {
-  const { usuario } = useAuth()
-  const esAdmin = usuario?.rol === 'Admin'
+  const { tienePermiso } = useAuth()
+  const puedeCrear = tienePermiso('ventas.crear')
+  const puedeCobrar = tienePermiso('ventas.cobrar')
+  const puedeEditar = tienePermiso('ventas.editar')
+  const puedeAnular = tienePermiso('ventas.anular')
 
   const [estado, setEstado] = useState<EstadoFactura | ''>('')
   const cargarFacturas = useCallback(
@@ -134,14 +137,16 @@ export function Ventas() {
           <h1>Ventas</h1>
           <p className="ayuda">{total} facturas</p>
         </div>
-        <button
-          className="boton"
-          onClick={() => setNuevaAbierta(true)}
-          disabled={!catalogoListo}
-          title={catalogoListo ? undefined : 'Cargando catálogo…'}
-        >
-          + Nueva venta
-        </button>
+        {puedeCrear && (
+          <button
+            className="boton"
+            onClick={() => setNuevaAbierta(true)}
+            disabled={!catalogoListo}
+            title={catalogoListo ? undefined : 'Cargando catálogo…'}
+          >
+            + Nueva venta
+          </button>
+        )}
       </header>
 
       <div className="barra">
@@ -280,7 +285,7 @@ export function Ventas() {
                         >
                           Ver
                         </button>
-                        {f.saldo > 0 && f.estado !== 'Anulada' && (
+                        {f.saldo > 0 && f.estado !== 'Anulada' && puedeCobrar && (
                           <button
                             className="boton boton--mini"
                             onClick={() => {
@@ -328,7 +333,8 @@ export function Ventas() {
           factura={cobrar}
           productos={productos}
           clientes={clientes}
-          esAdmin={esAdmin}
+          puedeEditar={puedeEditar}
+          puedeAnular={puedeAnular}
           modo={modoFactura}
           onCerrar={() => {
             setCobrar(null)
@@ -449,6 +455,8 @@ function FormVenta({
   onCerrar: () => void
   onGuardado: (aviso?: string) => void
 }) {
+  const { tienePermiso } = useAuth()
+  const puedeCobrar = tienePermiso('ventas.cobrar')
   const [cliente, setCliente] = useState<Cliente | null>(null)
   const [nombreEventual, setNombreEventual] = useState('')
   const [creandoCliente, setCreandoCliente] = useState(false)
@@ -789,16 +797,18 @@ function FormVenta({
           </table>
         </div>
 
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={cobrarAhora}
-            onChange={(e) => alternarCobro(e.target.checked)}
-          />
-          Cobrar ahora
-        </label>
+        {puedeCobrar && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={cobrarAhora}
+              onChange={(e) => alternarCobro(e.target.checked)}
+            />
+            Cobrar ahora
+          </label>
+        )}
 
-        {cobrarAhora && (
+        {puedeCobrar && cobrarAhora && (
           <div className="bloque-pago">
             <label>
               Monto a cobrar
@@ -854,7 +864,8 @@ function FormCobro({
   factura,
   productos,
   clientes,
-  esAdmin,
+  puedeEditar,
+  puedeAnular,
   modo,
   onCerrar,
   onGuardado,
@@ -862,7 +873,8 @@ function FormCobro({
   factura: Factura
   productos: Producto[]
   clientes: Cliente[]
-  esAdmin: boolean
+  puedeEditar: boolean
+  puedeAnular: boolean
   modo: 'ver' | 'pagar'
   onCerrar: () => void
   onGuardado: () => void
@@ -886,7 +898,8 @@ function FormCobro({
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const esPago = modo === 'pagar'
   const facturaAbierta = f.estado !== 'Anulada'
-  const editable = facturaAbierta && modo === 'ver'
+  const editable = facturaAbierta && modo === 'ver' && puedeEditar
+  const puedeAnularAqui = facturaAbierta && modo === 'ver' && puedeAnular
   const puedePagar = facturaAbierta && modo === 'pagar' && f.saldo > 0
   const activos = f.detalles.filter((d) => !d.anulado)
   const unaSolaLinea = activos.length <= 1
@@ -1277,7 +1290,7 @@ function FormCobro({
               <p className="ayuda">Los cambios en los productos se guardan al instante.</p>
             )}
             <div className="acciones">
-              {editable && esAdmin && (
+              {puedeAnularAqui && (
                 <button
                   type="button"
                   className="boton boton--danger"
@@ -1295,7 +1308,7 @@ function FormCobro({
           </>
         )}
 
-        {esAdmin && f.estado !== 'Anulada' && mostrandoAnular && (
+        {puedeAnular && f.estado !== 'Anulada' && mostrandoAnular && (
           <div className="panel-anular">
             <p className="ayuda">
               {pagado > 0

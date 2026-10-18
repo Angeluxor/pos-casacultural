@@ -7,7 +7,7 @@ export type Pagina<T> = {
 
 export type FormaPago = 'Efectivo' | 'Transferencia' | 'Tarjeta' | 'Otro'
 
-export type RolUsuario = 'Admin' | 'Cajero'
+export type RolUsuario = 'Admin' | 'Cajero' | 'Mesero'
 
 export type Usuario = {
   id: number
@@ -16,3 +16,6 @@ export type Usuario = {
   rol: RolUsuario
   activo: boolean
 }
+
+// Usuario de la sesión: incluye los permisos efectivos que devuelve /api/auth/me.
+export type UsuarioSesion = Usuario & { permisos: string[] }

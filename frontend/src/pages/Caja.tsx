@@ -24,6 +24,7 @@ import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
 import { usePaginacion } from '../lib/usePaginacion'
 import { Vacio } from '../components/Vacio'
+import { useAuth } from '../auth/useAuth'
 
 // "Otro" se conserva en la base para el histórico, pero ya no se ofrece en la UI.
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
@@ -53,6 +54,9 @@ function Cifras({ efectivo, banco }: { efectivo: string; banco: string }) {
 
 export function Caja() {
   const navigate = useNavigate()
+  const { tienePermiso } = useAuth()
+  const puedeOperar = tienePermiso('caja.operar')
+  const puedeIngresar = tienePermiso('ingresos.crear')
   const [turno, setTurno] = useState<TurnoCaja | null>(null)
   const [movimientos, setMovimientos] = useState<RegistroCaja[]>([])
   const [cargando, setCargando] = useState(true)
@@ -114,24 +118,30 @@ export function Caja() {
           </button>
           {turno ? (
             <>
-              <button
-                className="boton boton--secundario"
-                onClick={() => navigate('/ingresos?nuevo=1')}
-              >
-                Ingreso de inventario
-              </button>
-              <button className="boton boton--secundario" onClick={() => setMovModal(true)}>
-                Registrar movimiento
-              </button>
-              <button className="boton boton--danger" onClick={() => setCerrarModal(true)}>
-                Cerrar caja
-              </button>
+              {puedeIngresar && (
+                <button
+                  className="boton boton--secundario"
+                  onClick={() => navigate('/ingresos?nuevo=1')}
+                >
+                  Ingreso de inventario
+                </button>
+              )}
+              {puedeOperar && (
+                <>
+                  <button className="boton boton--secundario" onClick={() => setMovModal(true)}>
+                    Registrar movimiento
+                  </button>
+                  <button className="boton boton--danger" onClick={() => setCerrarModal(true)}>
+                    Cerrar caja
+                  </button>
+                </>
+              )}
             </>
-          ) : (
+          ) : puedeOperar ? (
             <button className="boton" onClick={() => setAbrirModal(true)}>
               Abrir caja
             </button>
-          )}
+          ) : null}
         </div>
       </header>
 

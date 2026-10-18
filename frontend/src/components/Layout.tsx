@@ -2,19 +2,22 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 
-type Enlace = { to: string; label: string; end?: boolean }
+type Enlace = { to: string; label: string; end?: boolean; permiso: string }
 
 const enlaces: Enlace[] = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/productos', label: 'Productos' },
-  { to: '/ventas', label: 'Ventas' },
-  { to: '/caja', label: 'Caja' },
-  { to: '/ingresos', label: 'Ingresos' },
-  { to: '/clientes', label: 'Clientes' },
+  { to: '/', label: 'Dashboard', end: true, permiso: 'dashboard.ver' },
+  { to: '/productos', label: 'Productos', permiso: 'productos.ver' },
+  { to: '/ventas', label: 'Ventas', permiso: 'ventas.ver' },
+  { to: '/caja', label: 'Caja', permiso: 'caja.ver' },
+  { to: '/ingresos', label: 'Ingresos', permiso: 'ingresos.ver' },
+  { to: '/clientes', label: 'Clientes', permiso: 'clientes.ver' },
+  { to: '/reportes', label: 'Reportes', permiso: 'reportes.ver' },
+  { to: '/usuarios', label: 'Usuarios', permiso: 'usuarios.gestionar' },
+  { to: '/permisos', label: 'Permisos', permiso: 'permisos.gestionar' },
 ]
 
 export function Layout() {
-  const { usuario, logout } = useAuth()
+  const { usuario, logout, tienePermiso } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -82,21 +85,13 @@ export function Layout() {
         </div>
 
         <nav className="nav">
-          {enlaces.map((e) => (
-            <NavLink key={e.to} to={e.to} end={e.end} className={claseEnlace}>
-              {e.label}
-            </NavLink>
-          ))}
-          {usuario?.rol === 'Admin' && (
-            <>
-              <NavLink to="/usuarios" className={claseEnlace}>
-                Usuarios
+          {enlaces
+            .filter((e) => tienePermiso(e.permiso))
+            .map((e) => (
+              <NavLink key={e.to} to={e.to} end={e.end} className={claseEnlace}>
+                {e.label}
               </NavLink>
-              <NavLink to="/reportes" className={claseEnlace}>
-                Reportes
-              </NavLink>
-            </>
-          )}
+            ))}
           <NavLink to="/perfil" className={claseEnlace}>
             Mi perfil
           </NavLink>

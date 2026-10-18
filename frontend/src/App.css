@@ -393,6 +393,23 @@ select:focus {
   font-weight: 600;
 }
 
+/* Matriz de permisos: casillas compactas y filas de separación por módulo. */
+.tabla--permisos td input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  accent-color: var(--primario);
+}
+
+.tabla__grupo td {
+  background: rgba(128, 128, 128, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--texto-suave);
+}
+
 .th-orden {
   display: inline-flex;
   align-items: center;

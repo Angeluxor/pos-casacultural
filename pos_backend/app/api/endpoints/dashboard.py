@@ -13,7 +13,7 @@ from app.db.models import (
     EstadoFactura,
 )
 from app.crud import crud_caja
-from app.api.deps import get_current_active_user
+from app.api.deps import require_permiso
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.schemas.dashboard import (
     DashboardResumen,
@@ -31,7 +31,7 @@ UMBRAL_BAJO_STOCK = 10
 @router.get("/", response_model=DashboardResumen)
 def resumen_dashboard(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("dashboard.ver")),
 ):
     ahora = get_colombia_time()
     hoy = ahora.date()

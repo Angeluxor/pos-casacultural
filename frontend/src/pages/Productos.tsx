@@ -27,8 +27,11 @@ const moneda = new Intl.NumberFormat('es-CO', {
 })
 
 export function Productos() {
-  const { usuario } = useAuth()
-  const esAdmin = usuario?.rol === 'Admin'
+  const { tienePermiso } = useAuth()
+  const puedeCrear = tienePermiso('productos.crear')
+  const puedeEditar = tienePermiso('productos.editar')
+  const puedeAjustar = tienePermiso('productos.ajustar')
+  const puedeIngresar = tienePermiso('ingresos.crear')
   const navigate = useNavigate()
 
   const { orden, direccion, alternar } = useOrdenServidor()
@@ -52,18 +55,22 @@ export function Productos() {
           <p className="ayuda">{total} productos en catálogo</p>
         </div>
         <div className="acciones-fila">
-          <button
-            className="boton boton--secundario"
-            onClick={() => navigate('/ingresos?nuevo=1')}
-          >
-            Ingreso de inventario
-          </button>
-          <button
-            className="boton"
-            onClick={() => setFormProducto({ abierto: true, producto: null })}
-          >
-            + Nuevo producto
-          </button>
+          {puedeIngresar && (
+            <button
+              className="boton boton--secundario"
+              onClick={() => navigate('/ingresos?nuevo=1')}
+            >
+              Ingreso de inventario
+            </button>
+          )}
+          {puedeCrear && (
+            <button
+              className="boton"
+              onClick={() => setFormProducto({ abierto: true, producto: null })}
+            >
+              + Nuevo producto
+            </button>
+          )}
         </div>
       </header>
 
@@ -135,13 +142,15 @@ export function Productos() {
                     </td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
-                        <button className="boton boton--mini" onClick={() => setMovProducto(p)}>
-                          Stock
-                        </button>
+                        {puedeAjustar && (
+                          <button className="boton boton--mini" onClick={() => setMovProducto(p)}>
+                            Stock
+                          </button>
+                        )}
                         <button className="boton boton--mini" onClick={() => setKardexProducto(p)}>
                           Historial
                         </button>
-                        {esAdmin && (
+                        {puedeEditar && (
                           <button
                             className="boton boton--mini"
                             onClick={() => setFormProducto({ abierto: true, producto: p })}

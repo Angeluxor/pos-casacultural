@@ -18,7 +18,7 @@ from app.db.models import (
     TipoMovimientoCaja,
     Usuario,
 )
-from app.api.deps import require_admin
+from app.api.deps import require_permiso
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.crud import crud_caja
 from app.schemas.reportes import (
@@ -37,7 +37,7 @@ from app.schemas.reportes import (
 )
 from app.services.reportes_export import excel_reporte, pdf_reporte
 
-router = APIRouter(dependencies=[Depends(require_admin)])
+router = APIRouter(dependencies=[Depends(require_permiso("reportes.ver"))])
 
 LIMITE_TOP = 50
 

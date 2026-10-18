@@ -4,15 +4,41 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthProvider } from './auth/AuthProvider'
-import type { Usuario } from './api/types'
+import type { UsuarioSesion } from './api/types'
 import type { DashboardResumen } from './api/dashboard'
 
-const USUARIO: Usuario = {
+const USUARIO: UsuarioSesion = {
   id: 1,
   username: 'sistema',
   nombre: 'Usuario Sistema',
   rol: 'Admin',
   activo: true,
+  // El Admin tiene todos los permisos.
+  permisos: [
+    'dashboard.ver',
+    'productos.ver',
+    'productos.crear',
+    'productos.editar',
+    'productos.ajustar',
+    'clientes.ver',
+    'clientes.crear',
+    'clientes.editar',
+    'clientes.eliminar',
+    'ventas.ver',
+    'ventas.crear',
+    'ventas.editar',
+    'ventas.cobrar',
+    'ventas.anular',
+    'caja.ver',
+    'caja.operar',
+    'ingresos.ver',
+    'ingresos.crear',
+    'ingresos.editar',
+    'ingresos.resolver',
+    'reportes.ver',
+    'usuarios.gestionar',
+    'permisos.gestionar',
+  ],
 }
 
 const DASHBOARD: DashboardResumen = {

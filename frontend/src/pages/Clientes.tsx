@@ -15,8 +15,10 @@ import { confirmarCierre } from '../lib/modal'
 import { usePaginacion } from '../lib/usePaginacion'
 
 export function Clientes() {
-  const { usuario } = useAuth()
-  const esAdmin = usuario?.rol === 'Admin'
+  const { tienePermiso } = useAuth()
+  const puedeCrear = tienePermiso('clientes.crear')
+  const puedeEditar = tienePermiso('clientes.editar')
+  const puedeEliminar = tienePermiso('clientes.eliminar')
 
   const { orden, direccion, alternar } = useOrdenServidor()
   const { datos, skip, setSkip, buscar, setBuscar, cargando, error, recargar, tamano } =
@@ -50,9 +52,14 @@ export function Clientes() {
           <h1>Clientes</h1>
           <p className="ayuda">{total} clientes registrados</p>
         </div>
-        <button className="boton" onClick={() => setFormCliente({ abierto: true, cliente: null })}>
-          + Nuevo cliente
-        </button>
+        {puedeCrear && (
+          <button
+            className="boton"
+            onClick={() => setFormCliente({ abierto: true, cliente: null })}
+          >
+            + Nuevo cliente
+          </button>
+        )}
       </header>
 
       <div className="barra">
@@ -103,13 +110,15 @@ export function Clientes() {
                     <td data-label="Correo">{c.correo || '—'}</td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
-                        <button
-                          className="boton boton--mini"
-                          onClick={() => setFormCliente({ abierto: true, cliente: c })}
-                        >
-                          Editar
-                        </button>
-                        {esAdmin && (
+                        {puedeEditar && (
+                          <button
+                            className="boton boton--mini"
+                            onClick={() => setFormCliente({ abierto: true, cliente: c })}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {puedeEliminar && (
                           <button
                             className="boton boton--mini boton--danger"
                             onClick={() => void borrar(c)}

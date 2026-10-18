@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.db.session import get_db
 from app.db.models import Usuario
-from app.api.deps import get_current_active_user, require_admin
+from app.api.deps import require_permiso
 from app.schemas.ingreso import IngresoCreate, IngresoUpdate, IngresoResponse, ResolverIngreso
 from app.schemas.common import Pagina
 from app.crud import crud_caja, crud_ingreso
@@ -16,7 +16,7 @@ router = APIRouter()
 def crear_ingreso(
     datos: IngresoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ingresos.crear")),
 ):
     caja_activa = crud_caja.obtener_caja_abierta(db)
     if not caja_activa:
@@ -35,7 +35,7 @@ def listar_ingresos(
     orden: Optional[str] = None,
     direccion: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ingresos.ver")),
 ):
     total, items = crud_ingreso.obtener_ingresos(
         db=db, skip=skip, limit=limit, desde=desde, hasta=hasta, orden=orden, direccion=direccion
@@ -47,7 +47,7 @@ def listar_ingresos(
 def leer_ingreso(
     ingreso_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ingresos.ver")),
 ):
     return crud_ingreso.obtener_ingreso(db=db, ingreso_id=ingreso_id)
 
@@ -57,7 +57,7 @@ def editar_ingreso(
     ingreso_id: int,
     datos: IngresoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_permiso("ingresos.editar")),
 ):
     return crud_ingreso.editar_ingreso(db=db, ingreso_id=ingreso_id, datos=datos)
 
@@ -67,7 +67,7 @@ def resolver_ingreso(
     ingreso_id: int,
     datos: ResolverIngreso,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_admin),
+    current_user: Usuario = Depends(require_permiso("ingresos.resolver")),
 ):
     return crud_ingreso.resolver_ingreso(
         db=db, ingreso_id=ingreso_id, justificacion=datos.justificacion

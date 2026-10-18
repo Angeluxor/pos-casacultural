@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from app.db.models import RolUsuario
 
 class UsuarioBase(BaseModel):
@@ -29,3 +29,9 @@ class UsuarioResponse(UsuarioBase):
 
     class Config:
         from_attributes = True
+
+
+class UsuarioMe(UsuarioResponse):
+    """Usuario de la sesión, con sus permisos efectivos (para la UI)."""
+
+    permisos: List[str] = []

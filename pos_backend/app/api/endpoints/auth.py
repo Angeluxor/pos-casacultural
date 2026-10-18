@@ -8,7 +8,8 @@ from app.crud import crud_usuario
 from app.core.security import create_access_token
 from app.core.rate_limit import limite_login
 from app.api.deps import get_current_active_user
-from app.schemas.usuario import UsuarioResponse, PerfilUpdate, PasswordUpdate
+from app.core.permisos import permisos_efectivos
+from app.schemas.usuario import UsuarioResponse, UsuarioMe, PerfilUpdate, PasswordUpdate
 
 router = APIRouter()
 
@@ -26,9 +27,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.get("/me", response_model=UsuarioResponse)
-def leer_usuario_actual(current_user: Usuario = Depends(get_current_active_user)):
-    return current_user
+@router.get("/me", response_model=UsuarioMe)
+def leer_usuario_actual(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    return UsuarioMe(
+        **UsuarioResponse.model_validate(current_user).model_dump(),
+        permisos=permisos_efectivos(db, current_user.rol),
+    )
 
 
 @router.put("/me", response_model=UsuarioResponse)

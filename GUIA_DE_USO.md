@@ -152,16 +152,23 @@ Puedes registrar **entradas** (dinero que entra) y **salidas** (dinero que sale)
 
 ---
 
-## 8. Usuarios (solo administradores)
+## 8. Usuarios y permisos (solo administradores)
 
-Solo el rol **Admin** puede entrar a esta pantalla. En ella puedes:
+Solo el rol **Admin** puede entrar a estas pantallas.
 
-- **Crear usuarios** con rol **Admin** o **Cajero**.
-  - *Cajero*: opera caja, ventas, productos y clientes.
-  - *Admin*: además puede administrar usuarios y ver el dashboard.
+En **Usuarios** puedes:
+
+- **Crear usuarios** con rol **Admin**, **Cajero** o **Mesero**:
+  - *Admin*: acceso total, incluidos Usuarios y Permisos.
+  - *Cajero*: opera caja, ventas, productos, clientes e ingresos; no anula facturas, ni ve reportes, ni administra usuarios.
+  - *Mesero*: toma pedidos y cobra, gestiona clientes y ve la caja; no opera la caja ni entra a ingresos, reportes o usuarios.
 - **Editar** datos y rol de un usuario existente.
 - **Restablecer contraseñas** cuando un usuario la olvida.
 - **Eliminar usuarios** que ya no trabajen en el local (los vendidos en periodos pasados quedan intactos).
+
+En **Permisos** ajustas, con casillas por módulo y acción, qué puede hacer cada
+rol **Cajero** y **Mesero**. El rol **Admin** siempre tiene todo y no se edita.
+Los cambios se aplican de inmediato (cada usuario los recibe al iniciar sesión).
 
 ---
 
@@ -192,7 +199,7 @@ El sistema se adapta a pantallas pequeñas:
 | "No se pudo conectar con el servidor" | Espera unos segundos y vuelve a intentar (el servicio puede tardar en despertar). |
 | No puedo iniciar sesión | Verifica tu usuario y contraseña; si sigue fallando, pide que te restablezcan la clave. |
 | "La caja está cerrada" | Alguien debe abrir la caja aun estando en el turno. |
-| No me aparece la pantalla de usuarios | Tu rol es Cajero; necesita un Admin para ver/administrar usuarios. |
+| No me aparece una pantalla (Usuarios, Reportes, Caja…) | Tu rol no tiene ese permiso; un Admin puede activarlo en *Permisos*. |
 | Cometí un error en una venta | Anula la factura (con motivo) y regístrala de nuevo correctamente. |
 
 ---

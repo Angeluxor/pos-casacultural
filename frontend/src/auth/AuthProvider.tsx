@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clearToken, getToken } from '../api/client'
 import { iniciarSesion, obtenerUsuarioActual } from '../api/auth'
-import type { Usuario } from '../api/types'
+import type { UsuarioSesion } from '../api/types'
 import { AuthContext } from './context'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
+  const [usuario, setUsuario] = useState<UsuarioSesion | null>(null)
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
@@ -35,9 +35,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(await obtenerUsuarioActual())
   }, [])
 
+  const tienePermiso = useCallback(
+    (clave: string) => usuario?.permisos?.includes(clave) ?? false,
+    [usuario],
+  )
+
   const value = useMemo(
-    () => ({ usuario, cargando, login, logout, refrescar }),
-    [usuario, cargando, login, logout, refrescar],
+    () => ({ usuario, cargando, login, logout, refrescar, tienePermiso }),
+    [usuario, cargando, login, logout, refrescar, tienePermiso],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
