@@ -1,4 +1,18 @@
-const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+// En producción usamos la URL configurada en Vercel. En los previews de
+// Vercel preferimos el proxy /api del propio despliegue (ver vercel.json):
+// así el navegador no hace una petición cross-origin y el preview no depende
+// de que su dominio esté en CORS_ORIGINS ni de variables de entorno Preview.
+export function resolverApiUrl(configurada: string, hostname: string): string {
+  const url = configurada.replace(/\/+$/, '')
+  const esPreviewVercel =
+    hostname.endsWith('.vercel.app') && hostname !== 'pos-casacultural.vercel.app'
+  return esPreviewVercel ? '' : url
+}
+
+const API_URL = resolverApiUrl(
+  import.meta.env.VITE_API_URL ?? '',
+  typeof window === 'undefined' ? '' : window.location.hostname,
+)
 const TOKEN_KEY = 'pos_token'
 
 export class ApiError extends Error {

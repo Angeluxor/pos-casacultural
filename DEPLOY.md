@@ -112,6 +112,11 @@ Al iniciar el contenedor se ejecuta `scripts/crear_admin.py` (idempotente): si n
 5. **Deploy**. Obtendrás una URL tipo `https://tu-proyecto.vercel.app`.
 
 > `VITE_API_URL` se incrusta en **tiempo de build**. Si la cambias, hay que **redeployar**.
+>
+> Los **previews de Vercel** usan el proxy `/api` definido en `frontend/vercel.json`, que
+> reenvía al backend de producción. Así el navegador no hace una petición cross-origin:
+> no hace falta configurar `VITE_API_URL` en Preview ni agregar cada URL de preview a
+> `CORS_ORIGINS`.
 
 ---
 
