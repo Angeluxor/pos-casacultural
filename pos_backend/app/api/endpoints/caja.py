@@ -59,8 +59,15 @@ def registrar_movimiento(movimiento: RegistroCajaCreate, db: Session = Depends(g
     return crud_caja.registrar_movimiento(db=db, turno_id=caja_activa.id, movimiento=movimiento, usuario_id=current_user.id)
 
 @router.get("/{turno_id}/movimientos", response_model=List[RegistroCajaResponse])
-def obtener_movimientos_caja(turno_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("caja.ver"))):
-    return crud_caja.obtener_movimientos(db=db, turno_id=turno_id)
+def obtener_movimientos_caja(
+    turno_id: int,
+    categoria: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("caja.ver")),
+):
+    return crud_caja.obtener_movimientos(
+        db=db, turno_id=turno_id, categoria=categoria
+    )
 
 
 @router.get("/{turno_id}/pendientes", response_model=List[FacturaPendienteCierre])

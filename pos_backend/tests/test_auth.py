@@ -62,11 +62,26 @@ def test_token_con_version_invalida_es_revocado(client, admin_id):
     assert resp.status_code == 401
 
 
+def test_usuario_inactivo_no_puede_iniciar_sesion(client):
+    _crear_usuario("inactivo", "inactivo123", RolUsuario.CAJERO, activo=False)
+
+    resp = client.post(
+        "/api/auth/login",
+        data={"username": "inactivo", "password": "inactivo123"},
+    )
+
+    assert resp.status_code == 403
+    assert "inactivo" in resp.json()["detail"].lower()
+    assert "access_token" not in resp.json()
+
+
 def test_usuario_inactivo_no_puede_usar_la_api(client):
     _crear_usuario("inactivo", "inactivo123", RolUsuario.CAJERO, activo=False)
-    token = login(client, "inactivo", "inactivo123")
+    # Aunque se emita un token por otra vía, la API rechaza al usuario inactivo.
+    token = create_access_token("inactivo", token_version=0)
     resp = client.get("/api/auth/me", headers=auth(token))
     assert resp.status_code == 400
+    assert "inactivo" in resp.json()["detail"].lower()
 
 
 def test_cajero_no_puede_listar_usuarios(client, token_cajero):

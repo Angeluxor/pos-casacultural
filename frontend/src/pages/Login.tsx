@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { CampoPassword } from '../components/CampoPassword'
+import { APP_VERSION } from '../lib/version'
 
 export function Login() {
   const { usuario, cargando, login } = useAuth()
@@ -36,6 +37,7 @@ export function Login() {
           <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo logo--login" />
           <h1>Casi Obsceno</h1>
           <span className="estado">Acceso al sistema</span>
+          <span className="estado estado--version">v{APP_VERSION}</span>
         </header>
 
         <form className="login" onSubmit={onSubmit}>

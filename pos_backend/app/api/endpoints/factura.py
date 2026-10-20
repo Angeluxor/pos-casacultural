@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import func
+from sqlalchemy import case, func
 from typing import Optional
 from datetime import date, datetime, time, timedelta
 
@@ -15,8 +15,9 @@ from app.schemas.factura import (
     FacturaClienteUpdate,
     ItemFacturaCreate,
     ItemFacturaUpdate,
+    PaginaFacturas,
+    TotalesFacturas,
 )
-from app.schemas.common import Pagina
 from app.crud import crud_factura
 from app.db.models import Factura
 from app.core.timezone import BOGOTA_TZ
@@ -33,7 +34,7 @@ def registrar_pagos(factura_id: int, pagos: PagoCreate | list[PagoCreate], db: S
     lista = pagos if isinstance(pagos, list) else [pagos]
     return crud_factura.registrar_pagos_factura(db=db, factura_id=factura_id, pagos=lista, cajero_id=current_user.id)
 
-@router.get("/", response_model=Pagina[FacturaResponse])
+@router.get("/", response_model=PaginaFacturas)
 def listar_facturas(
     skip: int = 0,
     limit: int = 30,
@@ -46,7 +47,7 @@ def listar_facturas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permiso("ventas.ver")),
 ):
-    query = db.query(Factura).options(selectinload(Factura.detalles), selectinload(Factura.pagos))
+    query = db.query(Factura)
     # Necesitamos la tabla clientes si se busca por nombre o se ordena por cliente.
     if buscar or orden == "cliente":
         query = query.join(Cliente, Factura.cliente_id == Cliente.id, isouter=True)
@@ -78,9 +79,33 @@ def listar_facturas(
         except ValueError:
             pass
     total = query.count()
+    total_facturado, total_saldo, total_anulado, facturas_anuladas = (
+        query.with_entities(
+            func.coalesce(func.sum(Factura.total), 0.0),
+            func.coalesce(func.sum(Factura.saldo), 0.0),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Factura.estado == EstadoFactura.ANULADA, Factura.total),
+                        else_=0.0,
+                    )
+                ),
+                0.0,
+            ),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Factura.estado == EstadoFactura.ANULADA, 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ),
+        ).one()
+    )
     items = (
         ordenar(
-            query,
+            query.options(selectinload(Factura.detalles), selectinload(Factura.pagos)),
             orden,
             direccion,
             {
@@ -99,7 +124,19 @@ def listar_facturas(
         .limit(limit)
         .all()
     )
-    return Pagina(items=items, total=total, skip=skip, limit=limit)
+    return PaginaFacturas(
+        items=items,
+        total=total,
+        skip=skip,
+        limit=limit,
+        totales=TotalesFacturas(
+            total_facturado=float(total_facturado),
+            saldo=float(total_saldo),
+            total_anulado=float(total_anulado),
+            neto=round(float(total_facturado) - float(total_anulado), 2),
+            facturas_anuladas=int(facturas_anuladas or 0),
+        ),
+    )
 
 @router.get("/{factura_id}", response_model=FacturaResponse)
 def obtener_factura(factura_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.ver"))):

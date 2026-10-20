@@ -6,13 +6,17 @@ import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { Productos } from './pages/Productos'
+import { Costos } from './pages/Costos'
 import { Clientes } from './pages/Clientes'
 import { Usuarios } from './pages/Usuarios'
 import { Permisos } from './pages/Permisos'
 import { Reportes } from './pages/Reportes'
+import { Balance } from './pages/Balance'
 import { Ventas } from './pages/Ventas'
 import { Caja } from './pages/Caja'
 import { Ingresos } from './pages/Ingresos'
+import { Proveedores } from './pages/Proveedores'
+import { Feedback } from './pages/Feedback'
 import { Perfil } from './pages/Perfil'
 
 /**
@@ -25,9 +29,13 @@ function Inicio() {
   if (tienePermiso('ventas.ver')) return <Navigate to="/ventas" replace />
   if (tienePermiso('caja.ver')) return <Navigate to="/caja" replace />
   if (tienePermiso('productos.ver')) return <Navigate to="/productos" replace />
+  if (tienePermiso('costos.ver')) return <Navigate to="/costos" replace />
   if (tienePermiso('clientes.ver')) return <Navigate to="/clientes" replace />
   if (tienePermiso('ingresos.ver')) return <Navigate to="/ingresos" replace />
+  if (tienePermiso('proveedores.ver')) return <Navigate to="/proveedores" replace />
   if (tienePermiso('reportes.ver')) return <Navigate to="/reportes" replace />
+  if (tienePermiso('balance.ver')) return <Navigate to="/balance" replace />
+  if (tienePermiso('feedback.gestionar')) return <Navigate to="/feedback" replace />
   if (tienePermiso('usuarios.gestionar')) return <Navigate to="/usuarios" replace />
   if (tienePermiso('permisos.gestionar')) return <Navigate to="/permisos" replace />
   return <Navigate to="/perfil" replace />
@@ -45,6 +53,14 @@ export default function App() {
             element={
               <PermisoRoute permiso="productos.ver">
                 <Productos />
+              </PermisoRoute>
+            }
+          />
+          <Route
+            path="costos"
+            element={
+              <PermisoRoute permiso="costos.ver">
+                <Costos />
               </PermisoRoute>
             }
           />
@@ -81,10 +97,34 @@ export default function App() {
             }
           />
           <Route
+            path="proveedores"
+            element={
+              <PermisoRoute permiso="proveedores.ver">
+                <Proveedores />
+              </PermisoRoute>
+            }
+          />
+          <Route
             path="reportes"
             element={
               <PermisoRoute permiso="reportes.ver">
                 <Reportes />
+              </PermisoRoute>
+            }
+          />
+          <Route
+            path="balance"
+            element={
+              <PermisoRoute permiso="balance.ver">
+                <Balance />
+              </PermisoRoute>
+            }
+          />
+          <Route
+            path="feedback"
+            element={
+              <PermisoRoute permiso="feedback.gestionar">
+                <Feedback />
               </PermisoRoute>
             }
           />

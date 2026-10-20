@@ -14,6 +14,11 @@ from app.db.models import (
 from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, RegistroCajaCreate, TurnoCajaHistorial
 from app.core.timezone import get_colombia_time, BOGOTA_TZ
 from app.core.orden import ordenar
+from app.core.categorias_caja import (
+    CATEGORIA_APERTURA,
+    CATEGORIA_CIERRE,
+    normalizar_categoria,
+)
 
 # El bolsillo "banco" agrupa todo lo que no entra al cajón físico.
 FORMAS_BANCO = {FormaPago.TRANSFERENCIA, FormaPago.TARJETA, FormaPago.OTRO}
@@ -99,6 +104,64 @@ def resumen_movimientos(db: Session, turno_id: int) -> tuple[dict, dict]:
 def obtener_caja_abierta(db: Session):
     return db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
 
+
+def saldos_actuales(db: Session) -> dict:
+    """Dinero disponible hoy en cada bolsillo de la caja.
+
+    Si hay un turno abierto se usa el saldo esperado (inicial + entradas -
+    salidas). Si no, se usan los saldos reales del último cierre; si nunca hubo
+    caja, ambos quedan en cero.
+    """
+    turno = obtener_caja_abierta(db)
+    if turno:
+        entradas, salidas = resumen_movimientos(db, turno.id)
+        return {
+            "efectivo": round(
+                turno.saldo_inicial_efectivo
+                + entradas["efectivo"]
+                - salidas["efectivo"],
+                2,
+            ),
+            "banco": round(
+                turno.saldo_inicial_banco + entradas["banco"] - salidas["banco"],
+                2,
+            ),
+            "abierta": True,
+            "turno_id": turno.id,
+            "origen": f"Turno #{turno.id} abierto (saldo esperado)",
+        }
+
+    ultimo = (
+        db.query(TurnoCaja)
+        .filter(TurnoCaja.abierta == False)  # noqa: E712
+        .order_by(TurnoCaja.fecha_cierre.desc(), TurnoCaja.id.desc())
+        .first()
+    )
+    if not ultimo:
+        return {
+            "efectivo": 0.0,
+            "banco": 0.0,
+            "abierta": False,
+            "turno_id": None,
+            "origen": "Sin turnos de caja registrados",
+        }
+
+    entradas, salidas = resumen_movimientos(db, ultimo.id)
+    efectivo = ultimo.saldo_final_real_efectivo
+    banco = ultimo.saldo_final_real_banco
+    if efectivo is None:
+        efectivo = ultimo.saldo_inicial_efectivo + entradas["efectivo"] - salidas["efectivo"]
+    if banco is None:
+        banco = ultimo.saldo_inicial_banco + entradas["banco"] - salidas["banco"]
+    return {
+        "efectivo": round(float(efectivo), 2),
+        "banco": round(float(banco), 2),
+        "abierta": False,
+        "turno_id": ultimo.id,
+        "origen": f"Último cierre (turno #{ultimo.id})",
+    }
+
+
 def abrir_caja(db: Session, turno: TurnoCajaCreate, usuario_id: int):
     caja_abierta = obtener_caja_abierta(db)
     if caja_abierta:
@@ -128,6 +191,7 @@ def abrir_caja(db: Session, turno: TurnoCajaCreate, usuario_id: int):
                     referencia="Apertura de caja",
                     forma_pago=forma_pago,
                     monto=monto,
+                    categoria=CATEGORIA_APERTURA,
                     observacion=f"Saldo inicial en {detalle} reportado al abrir caja",
                 )
             )
@@ -181,6 +245,7 @@ def cerrar_caja(db: Session, turno_id: int, datos_cierre: TurnoCajaUpdate, usuar
                     referencia="Cierre de caja",
                     forma_pago=forma_pago,
                     monto=monto,
+                    categoria=CATEGORIA_CIERRE,
                     observacion=f"Saldo final reportado en {detalle} al cerrar caja",
                 )
             )
@@ -189,6 +254,27 @@ def cerrar_caja(db: Session, turno_id: int, datos_cierre: TurnoCajaUpdate, usuar
     return db_turno
 
 def registrar_movimiento(db: Session, turno_id: int, movimiento: RegistroCajaCreate, usuario_id: int):
+    # La nómina es una compensación, no un cobro: nunca debe registrarse como un
+    # movimiento de caja (se contaría como efectivo). Se aplica desde la nómina
+    # del usuario.
+    if movimiento.forma_pago == FormaPago.NOMINA:
+        raise HTTPException(
+            status_code=400,
+            detail="La forma de pago «Nómina» no se registra como movimiento de caja.",
+        )
+    if movimiento.tipo not in (
+        TipoMovimientoCaja.ENTRADA,
+        TipoMovimientoCaja.SALIDA,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se pueden registrar entradas y salidas manuales de caja.",
+        )
+    try:
+        categoria = normalizar_categoria(movimiento.tipo, movimiento.categoria)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     db_movimiento = RegistroCaja(
         turno_caja_id=turno_id,
         usuario_id=usuario_id,
@@ -196,6 +282,7 @@ def registrar_movimiento(db: Session, turno_id: int, movimiento: RegistroCajaCre
         referencia=movimiento.referencia,
         forma_pago=movimiento.forma_pago,
         monto=movimiento.monto,
+        categoria=categoria,
         observacion=movimiento.observacion
     )
     db.add(db_movimiento)
@@ -203,13 +290,13 @@ def registrar_movimiento(db: Session, turno_id: int, movimiento: RegistroCajaCre
     db.refresh(db_movimiento)
     return db_movimiento
 
-def obtener_movimientos(db: Session, turno_id: int):
-    return (
-        db.query(RegistroCaja)
-        .filter(RegistroCaja.turno_caja_id == turno_id)
-        .order_by(RegistroCaja.fecha.asc(), RegistroCaja.id.asc())
-        .all()
-    )
+def obtener_movimientos(
+    db: Session, turno_id: int, categoria: str | None = None
+):
+    query = db.query(RegistroCaja).filter(RegistroCaja.turno_caja_id == turno_id)
+    if categoria:
+        query = query.filter(RegistroCaja.categoria == categoria)
+    return query.order_by(RegistroCaja.fecha.asc(), RegistroCaja.id.asc()).all()
 
 
 def obtener_turnos(

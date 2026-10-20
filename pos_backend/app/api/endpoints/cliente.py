@@ -5,7 +5,13 @@ from typing import Optional
 from app.db.session import get_db
 from app.db.models import Usuario
 from app.api.deps import require_permiso
-from app.schemas.cliente import ClienteCreate, ClienteUpdate, ClienteResponse
+from app.schemas.cliente import (
+    ClienteCreate,
+    ClienteUpdate,
+    ClienteResponse,
+    ClienteFusion,
+    ClienteFusionResponse,
+)
 from app.schemas.common import Pagina
 from app.crud import crud_cliente
 
@@ -23,6 +29,15 @@ def crear_cliente(cliente: ClienteCreate, db: Session = Depends(get_db), current
 def leer_clientes(skip: int = 0, limit: int = 50, buscar: Optional[str] = None, orden: Optional[str] = None, direccion: Optional[str] = None, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("clientes.ver"))):
     total, items = crud_cliente.obtener_clientes(db, skip=skip, limit=limit, buscar=buscar, orden=orden, direccion=direccion)
     return Pagina(items=items, total=total, skip=skip, limit=limit)
+
+@router.post("/fusionar", response_model=ClienteFusionResponse)
+def fusionar_clientes(datos: ClienteFusion, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("clientes.fusionar"))):
+    destino, facturas, eliminados = crud_cliente.fusionar_clientes(db=db, datos=datos)
+    return ClienteFusionResponse(
+        cliente=destino,
+        facturas_reasignadas=facturas,
+        clientes_eliminados=eliminados,
+    )
 
 @router.get("/{cliente_id}", response_model=ClienteResponse)
 def leer_cliente(cliente_id: int, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("clientes.ver"))):

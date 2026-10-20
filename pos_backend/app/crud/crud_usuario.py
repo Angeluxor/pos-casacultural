@@ -1,9 +1,9 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from fastapi import HTTPException
 from typing import Optional
-from app.db.models import Usuario
+from app.db.models import Usuario, Cliente
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, PerfilUpdate, PasswordUpdate
 from app.core.security import get_password_hash, verify_password
 from app.core.config import PASSWORD_MIN_LENGTH
@@ -16,6 +16,29 @@ def _validar_password(password: str) -> None:
             status_code=400,
             detail=f"La contraseña debe tener al menos {PASSWORD_MIN_LENGTH} caracteres",
         )
+
+
+def _validar_cliente_vinculable(
+    db: Session, cliente_id: int, usuario_id: Optional[int] = None
+) -> Cliente:
+    """Comprueba que el cliente exista y no esté vinculado a otro usuario."""
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(status_code=400, detail="El cliente indicado no existe")
+    if cliente.es_eventual:
+        raise HTTPException(
+            status_code=400, detail="No se puede vincular el cliente eventual"
+        )
+    query = db.query(Usuario).filter(Usuario.cliente_id == cliente_id)
+    if usuario_id is not None:
+        query = query.filter(Usuario.id != usuario_id)
+    otro = query.first()
+    if otro:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ese cliente ya está vinculado al usuario «{otro.username}»",
+        )
+    return cliente
 
 def get_usuario_by_username(db: Session, username: str):
     if not username:
@@ -48,7 +71,7 @@ def obtener_usuarios(
     orden: Optional[str] = None,
     direccion: Optional[str] = None,
 ):
-    query = db.query(Usuario)
+    query = db.query(Usuario).options(joinedload(Usuario.cliente))
     if buscar:
         filtro = f"%{buscar.strip()}%"
         query = query.filter(Usuario.username.ilike(filtro) | Usuario.nombre.ilike(filtro))
@@ -75,16 +98,26 @@ def obtener_usuarios(
 
 def crear_usuario(db: Session, usuario: UsuarioCreate):
     _validar_password(usuario.password)
+    if usuario.cliente_id is not None:
+        _validar_cliente_vinculable(db, usuario.cliente_id)
     hashed_password = get_password_hash(usuario.password)
     db_usuario = Usuario(
         username=usuario.username,
         nombre=usuario.nombre,
         hashed_password=hashed_password,
         rol=usuario.rol,
-        activo=usuario.activo
+        activo=usuario.activo,
+        cliente_id=usuario.cliente_id,
     )
     db.add(db_usuario)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Ese cliente ya está vinculado a otro usuario",
+        )
     db.refresh(db_usuario)
     return db_usuario
 
@@ -97,6 +130,11 @@ def actualizar_usuario(db: Session, user_id: int, usuario_in: UsuarioUpdate):
     datos = usuario_in.model_dump(exclude_unset=True)
     password = datos.pop("password", None)
 
+    # Un cliente solo puede quedar vinculado a un usuario (vínculo uno a uno).
+    # `None` desvincula; un id valida que el cliente exista y esté libre.
+    if datos.get("cliente_id") is not None:
+        _validar_cliente_vinculable(db, datos["cliente_id"], usuario_id=user_id)
+
     for campo, valor in datos.items():
         setattr(usuario, campo, valor)
 
@@ -106,7 +144,14 @@ def actualizar_usuario(db: Session, user_id: int, usuario_in: UsuarioUpdate):
         # Invalida los tokens vigentes del usuario al cambiar la contraseña.
         usuario.token_version = (usuario.token_version or 0) + 1
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Ese cliente ya está vinculado a otro usuario",
+        )
     db.refresh(usuario)
     return usuario
 

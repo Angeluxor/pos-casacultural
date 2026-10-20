@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -15,10 +15,12 @@ from app.db.models import (
 from app.crud import crud_caja
 from app.api.deps import require_permiso
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
+from app.services import bolsillos as bolsillos_service
 from app.schemas.dashboard import (
     DashboardResumen,
     DashboardKpis,
     VentaDia,
+    VentaMes,
     ProductoBajoStock,
     CajaResumen,
 )
@@ -28,6 +30,45 @@ router = APIRouter()
 UMBRAL_BAJO_STOCK = 10
 
 
+def _meses_ultimos(ahora: datetime, cantidad: int = 12) -> list[tuple[int, int]]:
+    """Lista de (año, mes) desde el más antiguo hasta el actual."""
+    anio, mes = ahora.year, ahora.month
+    meses: list[tuple[int, int]] = []
+    for _ in range(cantidad):
+        meses.append((anio, mes))
+        mes -= 1
+        if mes == 0:
+            mes = 12
+            anio -= 1
+    return list(reversed(meses))
+
+
+def _fecha_bogota(fecha: datetime) -> datetime:
+    """Normaliza una fecha para agruparla en hora de Colombia.
+
+    PostgreSQL devuelve la fecha con zona; SQLite (pruebas) la guarda ya en
+    hora local sin zona. En ambos casos el resultado es la hora de Colombia.
+    """
+    if fecha.tzinfo is None:
+        return fecha
+    return fecha.astimezone(BOGOTA_TZ)
+
+
+def _ventas_agrupadas(
+    db: Session, desde: datetime, hasta: datetime
+) -> list[tuple[datetime, float]]:
+    """Facturas no anuladas del rango, con su fecha y total."""
+    return (
+        db.query(Factura.fecha, Factura.total)
+        .filter(
+            Factura.fecha >= desde,
+            Factura.fecha < hasta,
+            Factura.estado != EstadoFactura.ANULADA,
+        )
+        .all()
+    )
+
+
 @router.get("/", response_model=DashboardResumen)
 def resumen_dashboard(
     db: Session = Depends(get_db),
@@ -35,35 +76,57 @@ def resumen_dashboard(
 ):
     ahora = get_colombia_time()
     hoy = ahora.date()
+    manana = datetime.combine(hoy + timedelta(days=1), time.min, tzinfo=BOGOTA_TZ)
     inicio_7d = datetime.combine(hoy - timedelta(days=6), time.min, tzinfo=BOGOTA_TZ)
 
     # --- Ventas de los últimos 7 días (agrupadas por día en hora de Colombia) ---
-    dia_expr = func.date_trunc("day", func.timezone("America/Bogota", Factura.fecha))
-    filas = (
-        db.query(
-            dia_expr.label("dia"),
-            func.count(Factura.id).label("cantidad"),
-            func.coalesce(func.sum(Factura.total), 0.0).label("total"),
-        )
-        .filter(Factura.fecha >= inicio_7d, Factura.estado != EstadoFactura.ANULADA)
-        .group_by(dia_expr)
-        .all()
-    )
-    por_dia = {fila.dia.date().isoformat(): fila for fila in filas}
+    por_dia: dict[str, dict[str, float]] = {}
+    for fecha, total in _ventas_agrupadas(db, inicio_7d, manana):
+        clave = _fecha_bogota(fecha).date().isoformat()
+        acumulado = por_dia.setdefault(clave, {"total": 0.0, "cantidad": 0})
+        acumulado["total"] += float(total or 0.0)
+        acumulado["cantidad"] += 1
 
     ventas_7d: list[VentaDia] = []
     for i in range(7):
         d = hoy - timedelta(days=6 - i)
-        fila = por_dia.get(d.isoformat())
+        acumulado = por_dia.get(d.isoformat(), {"total": 0.0, "cantidad": 0})
         ventas_7d.append(
             VentaDia(
                 fecha=d.isoformat(),
-                total=float(fila.total) if fila else 0.0,
-                cantidad=int(fila.cantidad) if fila else 0,
+                total=round(float(acumulado["total"]), 2),
+                cantidad=int(acumulado["cantidad"]),
             )
         )
     ventas_hoy = ventas_7d[-1]
-    ventas_7d_total = sum(v.total for v in ventas_7d)
+    ventas_7d_total = round(sum(v.total for v in ventas_7d), 2)
+
+    # --- Ventas mes a mes (últimos 12 meses, incluido el actual) ---
+    meses = _meses_ultimos(ahora)
+    anio_inicial, mes_inicial = meses[0]
+    inicio_12m = datetime.combine(
+        date(anio_inicial, mes_inicial, 1), time.min, tzinfo=BOGOTA_TZ
+    )
+    por_mes: dict[str, dict[str, float]] = {}
+    for fecha, total in _ventas_agrupadas(db, inicio_12m, manana):
+        f = _fecha_bogota(fecha)
+        clave = f"{f.year:04d}-{f.month:02d}"
+        acumulado = por_mes.setdefault(clave, {"total": 0.0, "cantidad": 0})
+        acumulado["total"] += float(total or 0.0)
+        acumulado["cantidad"] += 1
+
+    ventas_12m: list[VentaMes] = []
+    for anio, mes in meses:
+        clave = f"{anio:04d}-{mes:02d}"
+        acumulado = por_mes.get(clave, {"total": 0.0, "cantidad": 0})
+        ventas_12m.append(
+            VentaMes(
+                mes=clave,
+                total=round(float(acumulado["total"]), 2),
+                cantidad=int(acumulado["cantidad"]),
+            )
+        )
+    ventas_mes = ventas_12m[-1]
 
     # --- Cartera (saldo por cobrar) y facturas pendientes ---
     cartera_total = float(
@@ -110,8 +173,15 @@ def resumen_dashboard(
         for p in bajos
     ]
 
-    # --- Caja abierta ---
+    # --- Caja y bolsillos de gastos vitales ---
     turno = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+    saldos_caja = crud_caja.saldos_actuales(db)
+    reservado = bolsillos_service.total_reservado(db)
+    caja_total = round(
+        float(saldos_caja["efectivo"]) + float(saldos_caja["banco"]), 2
+    )
+    disponible = round(caja_total - reservado, 2)
+
     if turno:
         entradas, salidas = crud_caja.resumen_movimientos(db, turno.id)
         caja = CajaResumen(
@@ -129,9 +199,20 @@ def resumen_dashboard(
             esperado_banco=(
                 turno.saldo_inicial_banco + entradas["banco"] - salidas["banco"]
             ),
+            reservado=reservado,
+            disponible=disponible,
         )
     else:
-        caja = CajaResumen(abierta=False)
+        # Sin turno abierto se muestra el saldo del último cierre para que el
+        # bolsillo y la liquidez disponible sigan siendo visibles.
+        caja = CajaResumen(
+            abierta=False,
+            turno_id=saldos_caja["turno_id"],
+            esperado_efectivo=round(float(saldos_caja["efectivo"]), 2),
+            esperado_banco=round(float(saldos_caja["banco"]), 2),
+            reservado=reservado,
+            disponible=disponible,
+        )
 
     total_clientes = int(db.query(func.count(Cliente.id)).scalar())
     total_productos = int(db.query(func.count(Producto.id)).scalar())
@@ -141,11 +222,14 @@ def resumen_dashboard(
             ventas_hoy_total=ventas_hoy.total,
             ventas_hoy_cantidad=ventas_hoy.cantidad,
             ventas_7d_total=ventas_7d_total,
+            ventas_mes_total=ventas_mes.total,
+            ventas_mes_cantidad=ventas_mes.cantidad,
             cartera_total=cartera_total,
             facturas_pendientes=facturas_pendientes,
             facturas_credito=facturas_credito,
         ),
         ventas_ultimos_7_dias=ventas_7d,
+        ventas_ultimos_12_meses=ventas_12m,
         productos_bajo_stock=productos_bajo_stock,
         facturas_por_estado=facturas_por_estado,
         caja=caja,

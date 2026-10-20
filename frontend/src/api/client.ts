@@ -55,6 +55,34 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   return (await res.json()) as T
 }
 
+export async function apiBlob(path: string): Promise<Blob> {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, { headers })
+  } catch {
+    throw new ApiError(0, 'No se pudo conectar con el servidor')
+  }
+  if (res.status === 401) {
+    clearToken()
+    throw new ApiError(401, 'Sesión no válida o expirada')
+  }
+  if (!res.ok) {
+    let detalle = `Error ${res.status}`
+    try {
+      const data = await res.json()
+      if (typeof data.detail === 'string') detalle = data.detail
+    } catch {
+      /* respuesta sin JSON */
+    }
+    throw new ApiError(res.status, detalle)
+  }
+  return res.blob()
+}
+
 export async function apiJson<T>(path: string, method: string, cuerpo: unknown): Promise<T> {
   return apiFetch<T>(path, {
     method,

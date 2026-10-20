@@ -13,6 +13,8 @@ const USUARIO: UsuarioSesion = {
   nombre: 'Usuario Sistema',
   rol: 'Admin',
   activo: true,
+  cliente_id: null,
+  cliente_nombre: null,
   // El Admin tiene todos los permisos.
   permisos: [
     'dashboard.ver',
@@ -24,6 +26,7 @@ const USUARIO: UsuarioSesion = {
     'clientes.crear',
     'clientes.editar',
     'clientes.eliminar',
+    'clientes.fusionar',
     'ventas.ver',
     'ventas.crear',
     'ventas.editar',
@@ -35,8 +38,14 @@ const USUARIO: UsuarioSesion = {
     'ingresos.crear',
     'ingresos.editar',
     'ingresos.resolver',
+    'ingresos.pagar',
     'reportes.ver',
+    'balance.ver',
+    'balance.editar',
+    'feedback.crear',
+    'feedback.gestionar',
     'usuarios.gestionar',
+    'nomina.descontar',
     'permisos.gestionar',
   ],
 }
@@ -46,6 +55,8 @@ const DASHBOARD: DashboardResumen = {
     ventas_hoy_total: 120000,
     ventas_hoy_cantidad: 3,
     ventas_7d_total: 850000,
+    ventas_mes_total: 1250000,
+    ventas_mes_cantidad: 24,
     cartera_total: 200000,
     facturas_pendientes: 2,
     facturas_credito: 1,
@@ -58,6 +69,20 @@ const DASHBOARD: DashboardResumen = {
     { fecha: '2026-10-08', total: 0, cantidad: 0 },
     { fecha: '2026-10-09', total: 0, cantidad: 0 },
     { fecha: '2026-10-10', total: 120000, cantidad: 3 },
+  ],
+  ventas_ultimos_12_meses: [
+    { mes: '2025-11', total: 900000, cantidad: 18 },
+    { mes: '2025-12', total: 1100000, cantidad: 21 },
+    { mes: '2026-01', total: 800000, cantidad: 16 },
+    { mes: '2026-02', total: 950000, cantidad: 19 },
+    { mes: '2026-03', total: 1000000, cantidad: 20 },
+    { mes: '2026-04', total: 1050000, cantidad: 21 },
+    { mes: '2026-05', total: 980000, cantidad: 19 },
+    { mes: '2026-06', total: 1150000, cantidad: 22 },
+    { mes: '2026-07', total: 1200000, cantidad: 23 },
+    { mes: '2026-08', total: 1180000, cantidad: 22 },
+    { mes: '2026-09', total: 1300000, cantidad: 25 },
+    { mes: '2026-10', total: 1250000, cantidad: 24 },
   ],
   productos_bajo_stock: [
     { id: 7, codigo: 'LI006', nombre: 'Ron Media', stock: 2 },
@@ -74,6 +99,8 @@ const DASHBOARD: DashboardResumen = {
     salidas_banco: 0,
     esperado_efectivo: 120000,
     esperado_banco: 0,
+    reservado: 30000,
+    disponible: 90000,
   },
   total_clientes: 176,
   total_productos: 49,
@@ -154,6 +181,10 @@ describe('E2E: inicio de sesión y navegación protegida', () => {
     expect(await screen.findByText(/3 facturas/)).toBeInTheDocument()
     expect(await screen.findByText('Ron Media')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Reportes' })).toBeInTheDocument()
+    expect(screen.getByText('Caja disponible')).toBeInTheDocument()
+    expect(screen.getByText(/Reservado/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '12 meses' }))
+    expect(await screen.findByText(/Total 12 meses:/)).toBeInTheDocument()
     expect(localStorage.getItem('pos_token')).toBe('token-de-prueba')
   })
 

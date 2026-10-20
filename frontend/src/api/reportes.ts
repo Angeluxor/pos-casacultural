@@ -1,6 +1,12 @@
 import { apiDescargar, apiFetch } from './client'
 
-export type TipoReporte = 'ventas' | 'top-productos' | 'cartera' | 'caja' | 'inventario'
+export type TipoReporte =
+  | 'ventas'
+  | 'top-productos'
+  | 'cartera'
+  | 'caja'
+  | 'inventario'
+  | 'nomina'
 
 export type FormaPagoMonto = {
   forma_pago: string
@@ -132,6 +138,42 @@ export type ReporteInventario = {
   items: FilaInventario[]
 }
 
+export type FilaDescuentoNomina = {
+  id: number
+  fecha: string
+  usuario_id: number | null
+  usuario_nombre: string
+  cliente_id: number | null
+  cliente_nombre: string
+  monto: number
+  saldo_pendiente: number
+  facturas_afectadas: number
+  registrado_por: string
+  nota: string | null
+}
+
+export type FacturaAfectadaNomina = {
+  factura_id: number
+  fecha: string
+  total: number
+  abono: number
+  saldo_actual: number
+}
+
+export type FilaHistorialNomina = FilaDescuentoNomina & {
+  facturas: FacturaAfectadaNomina[]
+}
+
+export type ReporteNomina = {
+  desde: string | null
+  hasta: string | null
+  generado: string
+  descuentos: number
+  monto_total: number
+  facturas_afectadas_total: number
+  items: FilaDescuentoNomina[]
+}
+
 function qs(desde?: string, hasta?: string, extra?: Record<string, string>): string {
   const q = new URLSearchParams({ ...(extra ?? {}) })
   if (desde) q.set('desde', desde)
@@ -158,6 +200,15 @@ export function consultarCaja(desde?: string, hasta?: string): Promise<ReporteCa
 
 export function consultarInventario(): Promise<ReporteInventario> {
   return apiFetch<ReporteInventario>('/api/reportes/inventario')
+}
+
+export function consultarNomina(
+  desde?: string,
+  hasta?: string,
+  usuarioId?: number,
+): Promise<ReporteNomina> {
+  const extra = usuarioId != null ? { usuario_id: String(usuarioId) } : undefined
+  return apiFetch<ReporteNomina>(`/api/reportes/nomina${qs(desde, hasta, extra)}`)
 }
 
 export async function descargarReporte(

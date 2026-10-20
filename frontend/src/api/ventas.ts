@@ -53,6 +53,18 @@ export type FacturaCreate = {
   detalles: { producto_id: number; cantidad: number }[]
 }
 
+export type TotalesFacturas = {
+  total_facturado: number
+  saldo: number
+  total_anulado: number
+  neto: number
+  facturas_anuladas: number
+}
+
+export type PaginaFacturas = Pagina<Factura> & {
+  totales: TotalesFacturas
+}
+
 export type PagoCreate = {
   valor: number
   forma_pago: FormaPago
@@ -67,7 +79,7 @@ export function listarFacturasPaginado(params: {
   estado?: EstadoFactura | ''
   orden?: string
   direccion?: string
-}): Promise<Pagina<Factura>> {
+}): Promise<PaginaFacturas> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
@@ -77,7 +89,7 @@ export function listarFacturasPaginado(params: {
   if (params.estado) q.set('estado', params.estado)
   if (params.orden) q.set('orden', params.orden)
   if (params.direccion) q.set('direccion', params.direccion)
-  return apiFetch<Pagina<Factura>>(`/api/facturas/?${q.toString()}`)
+  return apiFetch<PaginaFacturas>(`/api/facturas/?${q.toString()}`)
 }
 
 export function obtenerFactura(id: number): Promise<Factura> {

@@ -278,3 +278,58 @@ def test_factura_credito_solo_permite_aumentar(client, token_cajero):
     )
     assert aumentar.status_code == 200, aumentar.text
     assert aumentar.json()["detalles"][0]["cantidad"] == 3
+
+
+def test_totales_facturas_respetan_los_filtros(client, token_admin):
+    _abrir_caja(client, token_admin)
+    producto = _crear_producto(
+        client, token_admin, codigo="P300", nombre="Producto totales", precio=5000, stock=20
+    )
+    cliente = _crear_cliente(client, token_admin, nombre="Ana Totales")
+
+    # 5.000 + 10.000 con cliente real; 5.000 eventual (luego anulada).
+    _vender(client, token_admin, producto["id"], cantidad=1, cliente_id=cliente["id"])
+    _vender(client, token_admin, producto["id"], cantidad=2, cliente_id=cliente["id"])
+    anulada = _vender(client, token_admin, producto["id"], cantidad=1)
+    resp = client.post(
+        f"/api/facturas/{anulada['id']}/anular",
+        headers=auth(token_admin),
+        json={"motivo": "prueba de totales"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    data = client.get("/api/facturas/", headers=auth(token_admin)).json()
+    assert data["total"] == 3
+    assert data["totales"]["total_facturado"] == 20000
+    assert data["totales"]["saldo"] == 15000
+    assert data["totales"]["total_anulado"] == 5000
+    assert data["totales"]["neto"] == 15000
+    assert data["totales"]["facturas_anuladas"] == 1
+
+    # Filtro por estado: solo anuladas.
+    data = client.get(
+        "/api/facturas/?estado=Anulada", headers=auth(token_admin)
+    ).json()
+    assert data["total"] == 1
+    assert data["totales"]["total_facturado"] == 5000
+    assert data["totales"]["saldo"] == 0
+    assert data["totales"]["total_anulado"] == 5000
+    assert data["totales"]["neto"] == 0
+
+    # Filtro por cliente: excluye la factura eventual anulada.
+    data = client.get(
+        "/api/facturas/?buscar=Ana%20Totales", headers=auth(token_admin)
+    ).json()
+    assert data["total"] == 2
+    assert data["totales"]["total_facturado"] == 15000
+    assert data["totales"]["saldo"] == 15000
+    assert data["totales"]["total_anulado"] == 0
+    assert data["totales"]["neto"] == 15000
+
+    # La paginación no altera los totales: cubren todos los resultados.
+    data = client.get(
+        "/api/facturas/?skip=0&limit=1", headers=auth(token_admin)
+    ).json()
+    assert data["total"] == 3
+    assert len(data["items"]) == 1
+    assert data["totales"]["total_facturado"] == 20000

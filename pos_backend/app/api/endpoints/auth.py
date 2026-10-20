@@ -23,6 +23,12 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Usuario o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not usuario.activo:
+        # No se emite token para usuarios desactivados.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuario inactivo. Contacta al administrador.",
+        )
     token = create_access_token(subject=usuario.username, token_version=usuario.token_version or 0)
     return {"access_token": token, "token_type": "bearer"}
 

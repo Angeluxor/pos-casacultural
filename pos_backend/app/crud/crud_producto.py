@@ -93,7 +93,8 @@ def crear_producto(db: Session, producto: ProductoCreate, usuario_id: int):
         codigo=producto.codigo,
         nombre=producto.nombre,
         precio=producto.precio,
-        stock=0 # Comienza en 0, el Kardex ajusta el stock real
+        misma_unidad_compra_venta=producto.misma_unidad_compra_venta,
+        stock=0,  # Comienza en 0, el Kardex ajusta el stock real
     )
     db.add(db_producto)
     db.commit()

@@ -1,5 +1,5 @@
 import re
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 
@@ -50,3 +50,23 @@ class ClienteResponse(ClienteBase):
 
     class Config:
         from_attributes = True
+
+
+class ClienteFusion(BaseModel):
+    """Fusión de clientes duplicados en un cliente principal.
+
+    Las facturas de ``origen_ids`` se reasignan a ``destino_id`` y después se
+    eliminan esos registros. El cliente principal nunca se elimina.
+    """
+
+    destino_id: int
+    origen_ids: list[int] = Field(min_length=1)
+    # Copia al cliente principal los datos de contacto que estén vacíos y que
+    # sean inequívocos entre los duplicados (ver `fusionar_clientes`).
+    completar_datos: bool = True
+
+
+class ClienteFusionResponse(BaseModel):
+    cliente: ClienteResponse
+    facturas_reasignadas: int
+    clientes_eliminados: int

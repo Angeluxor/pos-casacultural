@@ -3,9 +3,15 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.session import get_db
-from app.db.models import Usuario
+from app.db.models import FuentePagoIngreso, Usuario
 from app.api.deps import require_permiso
-from app.schemas.ingreso import IngresoCreate, IngresoUpdate, IngresoResponse, ResolverIngreso
+from app.schemas.ingreso import (
+    IngresoCreate,
+    IngresoUpdate,
+    IngresoResponse,
+    PagarIngreso,
+    ResolverIngreso,
+)
 from app.schemas.common import Pagina
 from app.crud import crud_caja, crud_ingreso
 
@@ -18,11 +24,22 @@ def crear_ingreso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permiso("ingresos.crear")),
 ):
-    caja_activa = crud_caja.obtener_caja_abierta(db)
-    if not caja_activa:
-        raise HTTPException(status_code=400, detail="Debe abrir la caja antes de registrar un ingreso.")
+    caja_activa = None
+    if datos.fuente_pago == FuentePagoIngreso.CAJA:
+        caja_activa = crud_caja.obtener_caja_abierta(db)
+        if not caja_activa:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Debe abrir la caja antes de registrar un ingreso con fuente "
+                    "«Caja activa», o elegir «Balance general»."
+                ),
+            )
     return crud_ingreso.crear_ingreso(
-        db=db, turno_caja_id=caja_activa.id, datos=datos, usuario_id=current_user.id
+        db=db,
+        turno_caja_id=caja_activa.id if caja_activa else None,
+        datos=datos,
+        usuario_id=current_user.id,
     )
 
 
@@ -71,4 +88,17 @@ def resolver_ingreso(
 ):
     return crud_ingreso.resolver_ingreso(
         db=db, ingreso_id=ingreso_id, justificacion=datos.justificacion
+    )
+
+
+@router.post("/{ingreso_id}/pagar", response_model=IngresoResponse)
+def pagar_ingreso(
+    ingreso_id: int,
+    datos: PagarIngreso,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ingresos.pagar")),
+):
+    """Paga una compra a crédito y descuenta el total de la caja abierta."""
+    return crud_ingreso.pagar_ingreso(
+        db=db, ingreso_id=ingreso_id, datos=datos, usuario_id=current_user.id
     )

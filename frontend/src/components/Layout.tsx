@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { APP_VERSION } from '../lib/version'
+import { FeedbackWidget } from './FeedbackWidget'
 
 type Enlace = { to: string; label: string; end?: boolean; permiso: string }
 
 const enlaces: Enlace[] = [
   { to: '/', label: 'Dashboard', end: true, permiso: 'dashboard.ver' },
   { to: '/productos', label: 'Productos', permiso: 'productos.ver' },
+  { to: '/costos', label: 'Costos', permiso: 'costos.ver' },
   { to: '/ventas', label: 'Ventas', permiso: 'ventas.ver' },
   { to: '/caja', label: 'Caja', permiso: 'caja.ver' },
   { to: '/ingresos', label: 'Ingresos', permiso: 'ingresos.ver' },
+  { to: '/proveedores', label: 'Proveedores', permiso: 'proveedores.ver' },
   { to: '/clientes', label: 'Clientes', permiso: 'clientes.ver' },
   { to: '/reportes', label: 'Reportes', permiso: 'reportes.ver' },
+  { to: '/balance', label: 'Balance', permiso: 'balance.ver' },
+  { to: '/feedback', label: 'Feedback', permiso: 'feedback.gestionar' },
   { to: '/usuarios', label: 'Usuarios', permiso: 'usuarios.gestionar' },
   { to: '/permisos', label: 'Permisos', permiso: 'permisos.gestionar' },
 ]
@@ -108,12 +114,17 @@ export function Layout() {
           <button className="boton boton--secundario boton--block" onClick={salir}>
             Cerrar sesión
           </button>
+          <span className="app-version" title={`Versión ${APP_VERSION}`}>
+            v{APP_VERSION}
+          </span>
         </div>
       </aside>
 
       <main className="contenido">
         <Outlet />
       </main>
+
+      <FeedbackWidget />
     </div>
   )
 }

@@ -1,9 +1,15 @@
 import { apiFetch, apiJson } from './client'
-import type { Pagina } from './types'
+import type { FormaPago, Pagina } from './types'
 
 export type FormaPagoIngreso = 'Efectivo' | 'Transferencia' | 'Crédito' | 'Donación'
+export type FuentePagoIngreso = 'Caja activa' | 'Balance general'
 export type EstadoIngreso = 'Completo' | 'Parcial' | 'Inconsistente'
 export type TipoItemIngreso = 'Producto' | 'Producto nuevo' | 'Otros'
+
+export const FUENTES_PAGO_INGRESO: FuentePagoIngreso[] = [
+  'Caja activa',
+  'Balance general',
+]
 
 export const FORMAS_PAGO_INGRESO: FormaPagoIngreso[] = [
   'Efectivo',
@@ -40,6 +46,8 @@ export type Ingreso = {
   fecha: string
   usuario_id: number
   turno_caja_id: number | null
+  fuente_pago: FuentePagoIngreso
+  proveedor_id: number | null
   proveedor: string | null
   forma_pago: FormaPagoIngreso
   total: number
@@ -47,11 +55,21 @@ export type Ingreso = {
   justificacion: string | null
   observacion: string | null
   suma_items: number
+  pagado: boolean
+  estado_pago: 'Pagado' | 'Pendiente' | 'No aplica'
+  fecha_pago: string | null
+  pagado_por_id: number | null
+  pagado_por_nombre: string | null
+  forma_pago_pago: FormaPago | null
   items: IngresoItem[]
 }
 
+export type FormaPagoCredito = 'Efectivo' | 'Transferencia'
+
 export type IngresoCreate = {
+  proveedor_id?: number | null
   proveedor?: string
+  fuente_pago?: FuentePagoIngreso
   forma_pago: FormaPagoIngreso
   total: number
   observacion?: string
@@ -64,6 +82,7 @@ export type IngresoItemUpdate = {
 }
 
 export type IngresoUpdate = {
+  proveedor_id?: number | null
   proveedor?: string
   observacion?: string
   items?: IngresoItemUpdate[]
@@ -91,8 +110,19 @@ export function crearIngreso(data: IngresoCreate): Promise<Ingreso> {
   return apiJson<Ingreso>('/api/ingresos/', 'POST', data)
 }
 
+export function obtenerIngreso(id: number): Promise<Ingreso> {
+  return apiFetch<Ingreso>(`/api/ingresos/${id}`)
+}
+
 export function editarIngreso(id: number, data: IngresoUpdate): Promise<Ingreso> {
   return apiJson<Ingreso>(`/api/ingresos/${id}`, 'PUT', data)
+}
+
+export function pagarIngreso(
+  id: number,
+  forma_pago: FormaPagoCredito,
+): Promise<Ingreso> {
+  return apiJson<Ingreso>(`/api/ingresos/${id}/pagar`, 'POST', { forma_pago })
 }
 
 export function resolverIngreso(id: number, justificacion: string): Promise<Ingreso> {

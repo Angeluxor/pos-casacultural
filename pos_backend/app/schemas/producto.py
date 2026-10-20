@@ -7,6 +7,9 @@ class ProductoBase(BaseModel):
     codigo: str
     nombre: str
     precio: float
+    # Si la compra y la venta usan la misma unidad. Se usa en Costos para
+    # decidir si tiene sentido mostrar la relación CMV/precio de venta.
+    misma_unidad_compra_venta: bool = True
 
 class ProductoCreate(ProductoBase):
     stock_inicial: int = 0
@@ -15,6 +18,7 @@ class ProductoCreate(ProductoBase):
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
     precio: Optional[float] = None
+    misma_unidad_compra_venta: Optional[bool] = None
 
 class ProductoResponse(ProductoBase):
     id: int

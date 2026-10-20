@@ -5,6 +5,10 @@ from app.db.models import (
     Pago, Cliente, EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
 )
 from app.core.timezone import get_colombia_time
+from app.core.categorias_caja import (
+    CATEGORIA_VENTAS,
+    CATEGORIA_DEVOLUCION,
+)
 from app.crud import crud_cliente
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
 
@@ -89,6 +93,14 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
     if not pagos:
         raise HTTPException(status_code=400, detail="Debe registrar al menos un pago.")
 
+    # Los abonos por nómina no son un cobro de caja: se registran desde la
+    # sección de nómina del usuario vinculado, no desde el cobro de facturas.
+    if any(pago.forma_pago == FormaPago.NOMINA for pago in pagos):
+        raise HTTPException(
+            status_code=400,
+            detail="Los abonos por nómina se registran desde la sección de nómina del usuario.",
+        )
+
     # 1. Verificar si hay Caja Abierta
     caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
     if not caja_abierta:
@@ -128,6 +140,7 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
             referencia=f"Abono a Factura #{factura.id}",
             forma_pago=pago.forma_pago,
             monto=pago.valor,
+            categoria=CATEGORIA_VENTAS,
             observacion="Cobro de ventas"
         ))
 
@@ -157,6 +170,18 @@ def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | 
     if factura.estado == EstadoFactura.ANULADA:
         db.rollback()
         raise HTTPException(status_code=400, detail="La factura ya está anulada.")
+
+    # Una factura con abonos por nómina no se anula desde aquí: el descuento ya
+    # se aplicó a la nómina del empleado y devolverlo requiere un ajuste manual.
+    if any(pago.forma_pago == FormaPago.NOMINA for pago in factura.pagos):
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No se puede anular: la factura tiene abonos por nómina. "
+                "Ajusta la nómina del empleado antes de anularla."
+            ),
+        )
 
     total_pagado = sum(pago.valor for pago in factura.pagos)
 
@@ -215,6 +240,7 @@ def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | 
                     referencia=f"Anulación Factura #{factura.id}",
                     forma_pago=forma_pago,
                     monto=monto,
+                    categoria=CATEGORIA_DEVOLUCION,
                     observacion=motivo or "Devolución por anulación de venta",
                 )
             )

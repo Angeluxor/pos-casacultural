@@ -2,11 +2,14 @@
 from .conftest import auth
 
 
-def _abrir_caja(client, token):
+def _abrir_caja(client, token, efectivo=0, banco=0):
     resp = client.post(
         "/api/caja/abrir",
         headers=auth(token),
-        json={"saldo_inicial_efectivo": 0, "saldo_inicial_banco": 0},
+        json={
+            "saldo_inicial_efectivo": efectivo,
+            "saldo_inicial_banco": banco,
+        },
     )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
@@ -30,6 +33,128 @@ def test_ingreso_requiere_caja_abierta(client, token_cajero):
     )
     assert resp.status_code == 400
     assert "caja" in resp.json()["detail"].lower()
+    assert "balance general" in resp.json()["detail"].lower()
+
+
+def test_ingreso_caja_activa_credito_tambien_requiere_caja(client, token_cajero):
+    resp = client.post(
+        "/api/ingresos/",
+        headers=auth(token_cajero),
+        json={
+            "fuente_pago": "Caja activa",
+            "forma_pago": "Crédito",
+            "total": 100,
+            "items": [{"tipo": "Otros", "concepto": "Flete", "valor": 100}],
+        },
+    )
+    assert resp.status_code == 400
+    assert "caja" in resp.json()["detail"].lower()
+
+
+def test_ingreso_balance_efectivo_no_exige_caja_ni_mueve_caja(client, token_admin):
+    producto = _crear_producto(client, token_admin, codigo="BAL-EF", nombre="Harina")
+
+    resp = client.post(
+        "/api/ingresos/",
+        headers=auth(token_admin),
+        json={
+            "proveedor": "Proveedor externo",
+            "fuente_pago": "Balance general",
+            "forma_pago": "Efectivo",
+            "total": 10000,
+            "items": [
+                {
+                    "tipo": "Producto",
+                    "producto_id": producto["id"],
+                    "cantidad": 2,
+                    "costo_unitario": 5000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    ingreso = resp.json()
+    assert ingreso["fuente_pago"] == "Balance general"
+    assert ingreso["turno_caja_id"] is None
+    assert ingreso["pagado"] is True
+    assert ingreso["estado_pago"] == "Pagado"
+    assert ingreso["forma_pago_pago"] == "Efectivo"
+
+    detalle = client.get(
+        f"/api/productos/{producto['id']}", headers=auth(token_admin)
+    ).json()
+    assert detalle["stock"] == 2
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["caja"]["abierta"] is False
+    assert balance["caja"]["efectivo"] == 0
+    assert balance["caja"]["banco"] == 0
+    assert balance["activos"]["inventario"] == 10000
+    assert balance["activos"]["total"] == 10000
+    assert balance["pasivos"]["cuentas_por_pagar"] == 0
+    # La compra ya pagada por fuera entra como activo; la contrapartida queda
+    # en el patrimonio residual.
+    assert balance["patrimonio"]["total"] == 10000
+    assert balance["resultados"]["gastos"] == 0
+
+
+def test_ingreso_balance_credito_genera_pasivo_y_se_paga_desde_caja(
+    client, token_admin
+):
+    producto = _crear_producto(client, token_admin, codigo="BAL-CR", nombre="Aceite")
+
+    resp = client.post(
+        "/api/ingresos/",
+        headers=auth(token_admin),
+        json={
+            "proveedor": "Proveedor crédito externo",
+            "fuente_pago": "Balance general",
+            "forma_pago": "Crédito",
+            "total": 20000,
+            "items": [
+                {
+                    "tipo": "Producto",
+                    "producto_id": producto["id"],
+                    "cantidad": 2,
+                    "costo_unitario": 10000,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    ingreso = resp.json()
+    assert ingreso["fuente_pago"] == "Balance general"
+    assert ingreso["turno_caja_id"] is None
+    assert ingreso["pagado"] is False
+    assert ingreso["estado_pago"] == "Pendiente"
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["caja"]["abierta"] is False
+    assert balance["activos"]["inventario"] == 20000
+    assert balance["pasivos"]["cuentas_por_pagar"] == 20000
+    assert balance["patrimonio"]["total"] == 0
+    assert balance["compras_credito_pendientes"] == 1
+    assert balance["cuentas_por_pagar"][0]["ingreso_id"] == ingreso["id"]
+
+    # Aunque el ingreso se cargó al balance, el pago posterior sí sale de la
+    # caja abierta.
+    _abrir_caja(client, token_admin, efectivo=50000)
+    pago = client.post(
+        f"/api/ingresos/{ingreso['id']}/pagar",
+        headers=auth(token_admin),
+        json={"forma_pago": "Efectivo"},
+    )
+    assert pago.status_code == 200, pago.text
+    assert pago.json()["pagado"] is True
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["caja"]["efectivo"] == 30000
+    assert balance["activos"]["inventario"] == 20000
+    assert balance["activos"]["total"] == 50000
+    assert balance["pasivos"]["cuentas_por_pagar"] == 0
+    assert balance["patrimonio"]["total"] == 50000
+    assert balance["resultados"]["gastos"] == 0
+    assert balance["resultados"]["utilidad"] == 0
 
 
 def test_ingreso_completo_mueve_stock_y_caja(client, token_cajero):
@@ -52,6 +177,7 @@ def test_ingreso_completo_mueve_stock_y_caja(client, token_cajero):
     ingreso = resp.json()
     assert ingreso["estado"] == "Completo"
     assert ingreso["suma_items"] == 50000
+    assert ingreso["fuente_pago"] == "Caja activa"
     assert ingreso["turno_caja_id"] == turno_id
 
     detalle = client.get(f"/api/productos/{producto['id']}", headers=auth(token_cajero)).json()

@@ -3,11 +3,16 @@ import { useSearchParams } from 'react-router-dom'
 import {
   crearIngreso,
   editarIngreso,
+  obtenerIngreso,
+  pagarIngreso,
   paginaIngresos,
   resolverIngreso,
   FORMAS_PAGO_INGRESO,
+  FUENTES_PAGO_INGRESO,
   TIPOS_ITEM_INGRESO,
+  type FormaPagoCredito,
   type FormaPagoIngreso,
+  type FuentePagoIngreso,
   type Ingreso,
   type IngresoCreate,
   type TipoItemIngreso,
@@ -15,6 +20,7 @@ import {
 import { listarProductos, type Producto } from '../api/productos'
 import { useAuth } from '../auth/useAuth'
 import { Paginacion } from '../components/Paginacion'
+import { SelectorProveedor } from '../components/SelectorProveedor'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
@@ -28,9 +34,21 @@ const CLASE_ESTADO: Record<string, string> = {
   Inconsistente: 'badge badge--off',
 }
 
+const CLASE_PAGO: Record<string, string> = {
+  Pagado: 'badge badge--on',
+  Pendiente: 'badge badge--warn',
+  'No aplica': 'badge',
+}
+
+const CLASE_FUENTE: Record<string, string> = {
+  'Caja activa': 'badge badge--on',
+  'Balance general': 'badge badge--info',
+}
+
 export function Ingresos() {
   const { tienePermiso } = useAuth()
   const puedeCrear = tienePermiso('ingresos.crear')
+  const puedePagar = tienePermiso('ingresos.pagar')
   const [params, setParams] = useSearchParams()
 
   const { orden, direccion, alternar } = useOrdenServidor()
@@ -45,6 +63,7 @@ export function Ingresos() {
 
   const [formNuevo, setFormNuevo] = useState(false)
   const [detalle, setDetalle] = useState<Ingreso | null>(null)
+  const [errorApertura, setErrorApertura] = useState('')
 
   useEffect(() => {
     if (params.get('nuevo') && puedeCrear) {
@@ -53,6 +72,26 @@ export function Ingresos() {
       setParams(params, { replace: true })
     }
   }, [params, setParams, puedeCrear])
+
+  useEffect(() => {
+    const pagarId = params.get('pagar')
+    if (!pagarId) return
+    const id = Number(pagarId)
+    params.delete('pagar')
+    setParams(params, { replace: true })
+    if (!Number.isFinite(id)) {
+      setErrorApertura('No se pudo identificar el ingreso a pagar.')
+      return
+    }
+    obtenerIngreso(id)
+      .then((ing) => {
+        setDetalle(ing)
+        setErrorApertura('')
+      })
+      .catch((err) => {
+        setErrorApertura(err instanceof Error ? err.message : 'No se pudo abrir el ingreso')
+      })
+  }, [params, setParams])
 
   return (
     <div className="pagina">
@@ -69,13 +108,14 @@ export function Ingresos() {
       </header>
 
       {error && <p className="error">{error}</p>}
+      {errorApertura && <p className="error">{errorApertura}</p>}
 
       {cargando ? (
         <p className="ayuda">Cargando…</p>
       ) : ingresos.length === 0 ? (
         <Vacio
           titulo="Aún no hay ingresos"
-          detalle="Registra la entrada de mercancía: suma stock y, si la pagas en efectivo o transferencia, descuenta de la caja."
+          detalle="Registra la entrada de mercancía desde la caja activa o directamente en el balance general, sin mover la caja."
         />
       ) : (
         <>
@@ -97,6 +137,7 @@ export function Ingresos() {
                   >
                     Proveedor
                   </ThOrdenable>
+                  <th>Fuente</th>
                   <ThOrdenable
                     campo="forma_pago"
                     orden={orden}
@@ -105,6 +146,7 @@ export function Ingresos() {
                   >
                     Forma de pago
                   </ThOrdenable>
+                  <th>Pago</th>
                   <ThOrdenable
                     campo="total"
                     orden={orden}
@@ -127,7 +169,17 @@ export function Ingresos() {
                     <td data-label="#">#{ing.id}</td>
                     <td data-label="Fecha">{formatoFecha(ing.fecha)}</td>
                     <td data-label="Proveedor">{ing.proveedor ?? '—'}</td>
+                    <td data-label="Fuente">
+                      <span className={CLASE_FUENTE[ing.fuente_pago] ?? 'badge'}>
+                        {ing.fuente_pago}
+                      </span>
+                    </td>
                     <td data-label="Forma de pago">{ing.forma_pago}</td>
+                    <td data-label="Pago">
+                      <span className={CLASE_PAGO[ing.estado_pago] ?? 'badge'}>
+                        {ing.estado_pago}
+                      </span>
+                    </td>
                     <td data-label="Total" className="derecha">
                       {moneda.format(ing.total)}
                     </td>
@@ -139,7 +191,13 @@ export function Ingresos() {
                     </td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
-                        <button className="boton boton--mini" onClick={() => setDetalle(ing)}>
+                        <button
+                          className="boton boton--mini"
+                          onClick={() => {
+                            setErrorApertura('')
+                            setDetalle(ing)
+                          }}
+                        >
                           Ver
                         </button>
                       </div>
@@ -168,6 +226,7 @@ export function Ingresos() {
           ingreso={detalle}
           puedeResolver={tienePermiso('ingresos.resolver')}
           puedeEditar={tienePermiso('ingresos.editar')}
+          puedePagar={puedePagar}
           onCerrar={() => setDetalle(null)}
           onActualizado={(ing) => {
             setDetalle(ing)
@@ -207,7 +266,8 @@ function nuevaLinea(tipo: TipoItemIngreso = 'Producto'): Linea {
 
 function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () => void }) {
   const [productos, setProductos] = useState<Producto[]>([])
-  const [proveedor, setProveedor] = useState('')
+  const [proveedorId, setProveedorId] = useState<number | null>(null)
+  const [fuentePago, setFuentePago] = useState<FuentePagoIngreso>('Caja activa')
   const [formaPago, setFormaPago] = useState<FormaPagoIngreso>('Efectivo')
   const [total, setTotal] = useState('')
   const [observacion, setObservacion] = useState('')
@@ -279,7 +339,8 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
       return
     }
     const data: IngresoCreate = {
-      proveedor: proveedor.trim() || undefined,
+      proveedor_id: proveedorId,
+      fuente_pago: fuentePago,
       forma_pago: formaPago,
       total: totalNum,
       observacion: observacion.trim() || undefined,
@@ -303,13 +364,19 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
         {error && <p className="error">{error}</p>}
 
         <div className="fila-campos">
+          <SelectorProveedor value={proveedorId} onChange={setProveedorId} />
           <label>
-            Proveedor
-            <input
-              value={proveedor}
-              onChange={(e) => setProveedor(e.target.value)}
-              placeholder="Opcional"
-            />
+            Fuente de pago
+            <select
+              value={fuentePago}
+              onChange={(e) => setFuentePago(e.target.value as FuentePagoIngreso)}
+            >
+              {FUENTES_PAGO_INGRESO.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Forma de pago
@@ -335,7 +402,7 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
               required
             />
           </label>
-          <label>
+          <label style={{ gridColumn: '1 / -1' }}>
             Observación
             <input
               value={observacion}
@@ -344,6 +411,11 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
             />
           </label>
         </div>
+        <p className="ayuda">
+          {fuentePago === 'Caja activa'
+            ? 'Requiere caja abierta. Efectivo y transferencia descuentan de la caja; Crédito y Donación no mueven dinero.'
+            : 'No requiere caja abierta ni mueve efectivo o banco. Efectivo y transferencia se consideran pagados por fuera; Crédito queda como cuenta por pagar y Donación no genera deuda.'}
+        </p>
 
         <h3>Ítems</h3>
         <ul className="lista-simple">
@@ -484,24 +556,29 @@ function DetalleIngreso({
   ingreso,
   puedeResolver,
   puedeEditar,
+  puedePagar,
   onCerrar,
   onActualizado,
 }: {
   ingreso: Ingreso
   puedeResolver: boolean
   puedeEditar: boolean
+  puedePagar: boolean
   onCerrar: () => void
   onActualizado: (ing: Ingreso) => void
 }) {
-  const [proveedor, setProveedor] = useState(ingreso.proveedor ?? '')
+  const [proveedorId, setProveedorId] = useState<number | null>(ingreso.proveedor_id)
   const [costos, setCostos] = useState<Record<number, string>>(() =>
     Object.fromEntries(
       ingreso.items.map((i) => [i.id, i.costo_unitario != null ? String(i.costo_unitario) : '']),
     ),
   )
   const [justificacion, setJustificacion] = useState('')
+  const [formaPagoPago, setFormaPagoPago] = useState<FormaPagoCredito>('Efectivo')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [pagando, setPagando] = useState(false)
+  const editable = puedeEditar && !(ingreso.forma_pago === 'Crédito' && ingreso.pagado)
 
   async function guardar() {
     setError('')
@@ -514,7 +591,7 @@ function DetalleIngreso({
           costo_unitario: costos[i.id] ? Number(costos[i.id]) : undefined,
         }))
       const actualizado = await editarIngreso(ingreso.id, {
-        proveedor: proveedor.trim() || undefined,
+        proveedor_id: proveedorId,
         items,
       })
       onActualizado(actualizado)
@@ -542,6 +619,19 @@ function DetalleIngreso({
     }
   }
 
+  async function pagar() {
+    setError('')
+    setPagando(true)
+    try {
+      const actualizado = await pagarIngreso(ingreso.id, formaPagoPago)
+      onActualizado(actualizado)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al pagar el ingreso')
+    } finally {
+      setPagando(false)
+    }
+  }
+
   return (
     <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
       <div className="modal modal--ancho" onClick={(e) => e.stopPropagation()}>
@@ -550,22 +640,77 @@ function DetalleIngreso({
           <span className={CLASE_ESTADO[ingreso.estado] ?? 'badge'}>{ingreso.estado}</span>
         </h2>
         <p className="ayuda">
-          {formatoFecha(ingreso.fecha)} · {ingreso.forma_pago} · Total {moneda.format(ingreso.total)}{' '}
-          · Suma ítems {moneda.format(ingreso.suma_items)}
+          {formatoFecha(ingreso.fecha)} · Fuente: {ingreso.fuente_pago} · {ingreso.forma_pago} ·
+          Total {moneda.format(ingreso.total)} · Suma ítems {moneda.format(ingreso.suma_items)} ·
+          Pago: {ingreso.estado_pago}
         </p>
+        {ingreso.fuente_pago === 'Balance general' && (
+          <p className="ayuda">
+            {ingreso.forma_pago === 'Crédito'
+              ? 'Registrado en balance general como cuenta por pagar. Al pagarlo, el total sale de la caja abierta.'
+              : ingreso.forma_pago === 'Donación'
+                ? 'Registrado en balance general: no mueve caja ni genera deuda.'
+                : 'Registrado en balance general: no movió caja; se considera pagado por fuera del POS.'}
+          </p>
+        )}
         {ingreso.justificacion && (
           <p className="ayuda">Justificación: {ingreso.justificacion}</p>
         )}
         {error && <p className="error">{error}</p>}
 
-        <label>
-          Proveedor
-          <input
-            value={proveedor}
-            onChange={(e) => setProveedor(e.target.value)}
-            disabled={!puedeEditar}
-          />
-        </label>
+        {ingreso.forma_pago === 'Crédito' && (
+          <div className="panel" style={{ marginTop: 16 }}>
+            <h3>Pago de la compra</h3>
+            {ingreso.pagado ? (
+              <p className="ayuda">
+                Pagada el {ingreso.fecha_pago ? formatoFecha(ingreso.fecha_pago) : '—'} con{' '}
+                {ingreso.forma_pago_pago ?? '—'}
+                {ingreso.pagado_por_nombre ? ` por ${ingreso.pagado_por_nombre}` : ''}. Ya no se
+                puede editar.
+              </p>
+            ) : (
+              <>
+                <p className="ayuda">
+                  Esta compra está pendiente. Al pagarla, el total sale de la caja abierta y la
+                  cuenta por pagar queda en cero.
+                </p>
+                {puedePagar ? (
+                  <div className="fila-campos">
+                    <label>
+                      Forma de pago
+                      <select
+                        value={formaPagoPago}
+                        onChange={(e) => setFormaPagoPago(e.target.value as FormaPagoCredito)}
+                        disabled={pagando}
+                      >
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia">Transferencia</option>
+                      </select>
+                    </label>
+                    <div className="acciones">
+                      <button
+                        type="button"
+                        className="boton"
+                        onClick={pagar}
+                        disabled={pagando}
+                      >
+                        {pagando ? 'Registrando…' : 'Registrar pago'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="ayuda">No tienes permiso para registrar este pago.</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        <SelectorProveedor
+          value={proveedorId}
+          onChange={setProveedorId}
+          disabled={!editable}
+        />
 
         <div className="tabla-wrap tabla-wrap--cards">
           <table className="tabla tabla--cards">
@@ -596,7 +741,7 @@ function DetalleIngreso({
                         min="0"
                         step="0.01"
                         value={costos[i.id] ?? ''}
-                        disabled={!puedeEditar}
+                        disabled={!editable}
                         onChange={(e) =>
                           setCostos((c) => ({ ...c, [i.id]: e.target.value }))
                         }
@@ -643,7 +788,7 @@ function DetalleIngreso({
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cerrar
           </button>
-          {puedeEditar && (
+          {editable && (
             <button type="button" className="boton" onClick={guardar} disabled={guardando}>
               {guardando ? 'Guardando…' : 'Guardar cambios'}
             </button>

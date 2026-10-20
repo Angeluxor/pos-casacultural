@@ -11,6 +11,7 @@ import {
   pagarFactura,
   type EstadoFactura,
   type Factura,
+  type PaginaFacturas,
 } from '../api/ventas'
 import { listarProductos, type Producto } from '../api/productos'
 import { listarClientes, type Cliente } from '../api/clientes'
@@ -88,6 +89,7 @@ export function Ventas() {
   } = usePaginacion(cargarFacturas, 30, orden, direccion)
   const facturas = datos?.items ?? []
   const total = datos?.total ?? 0
+  const totales = (datos as PaginaFacturas | null)?.totales
   const hayFiltros = buscar.trim() !== '' || desde !== '' || hasta !== '' || estado !== ''
 
   useEffect(() => {
@@ -206,6 +208,35 @@ export function Ventas() {
 
       {errorCatalogo && <p className="error">Catálogo: {errorCatalogo}</p>}
       {mensaje && <p className="aviso">{mensaje}</p>}
+
+      {totales && total > 0 && !error && !cargando && (
+        <>
+          <p className="ayuda">
+            Totales de todos los resultados que cumplen los filtros:
+          </p>
+          <div className="tarjetas">
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Total facturado</span>
+              <strong>{moneda.format(totales.total_facturado)}</strong>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Saldo pendiente</span>
+              <strong>{moneda.format(totales.saldo)}</strong>
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Anulado</span>
+              <strong>{moneda.format(totales.total_anulado)}</strong>
+              {totales.facturas_anuladas > 0 && (
+                <small>{totales.facturas_anuladas} factura(s)</small>
+              )}
+            </div>
+            <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Neto</span>
+              <strong>{moneda.format(totales.neto)}</strong>
+            </div>
+          </div>
+        </>
+      )}
 
       {cargando ? (
         <p className="ayuda">Cargando…</p>

@@ -76,3 +76,21 @@ class FacturaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TotalesFacturas(BaseModel):
+    """Totales de todas las facturas que cumplen los filtros de la lista."""
+
+    total_facturado: float
+    saldo: float
+    total_anulado: float
+    neto: float
+    facturas_anuladas: int
+
+
+class PaginaFacturas(BaseModel):
+    items: List[FacturaResponse]
+    total: int
+    skip: int
+    limit: int
+    totales: TotalesFacturas

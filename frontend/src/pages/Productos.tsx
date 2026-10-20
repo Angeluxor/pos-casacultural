@@ -218,6 +218,9 @@ function FormProducto({
   const [nombre, setNombre] = useState(producto?.nombre ?? '')
   const [precio, setPrecio] = useState(producto ? String(producto.precio) : '')
   const [stockInicial, setStockInicial] = useState('0')
+  const [mismaUnidad, setMismaUnidad] = useState(
+    producto?.misma_unidad_compra_venta ?? true,
+  )
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
@@ -227,13 +230,18 @@ function FormProducto({
     setGuardando(true)
     try {
       if (producto) {
-        await actualizarProducto(producto.id, { nombre, precio: Number(precio) })
+        await actualizarProducto(producto.id, {
+          nombre,
+          precio: Number(precio),
+          misma_unidad_compra_venta: mismaUnidad,
+        })
       } else {
         await crearProducto({
           codigo,
           nombre,
           precio: Number(precio),
           stock_inicial: Number(stockInicial),
+          misma_unidad_compra_venta: mismaUnidad,
         })
       }
       onGuardado()
@@ -283,6 +291,18 @@ function FormProducto({
             />
           </label>
         )}
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={mismaUnidad}
+            onChange={(e) => setMismaUnidad(e.target.checked)}
+          />
+          Se compra y se vende en la misma unidad (1:1)
+        </label>
+        <p className="ayuda">
+          Desmárcalo si compras por caja o paquete y vendes por unidad: en Costos
+          no se mostrará la relación CMV/precio de ese producto.
+        </p>
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cancelar

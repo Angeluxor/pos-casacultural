@@ -50,6 +50,9 @@ class RegistroCajaBase(BaseModel):
     referencia: str
     forma_pago: FormaPago
     monto: float
+    # Clasificación operativa del movimiento (p. ej. Aporte cultural).
+    # Los movimientos históricos y algunos automáticos pueden no tenerla.
+    categoria: Optional[str] = None
     observacion: Optional[str] = None
 
 class RegistroCajaCreate(RegistroCajaBase):

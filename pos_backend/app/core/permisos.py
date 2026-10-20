@@ -29,12 +29,20 @@ CATALOGO: List[Tuple[str, List[Tuple[str, str]]]] = [
         ],
     ),
     (
+        "Costos",
+        [
+            ("costos.ver", "Ver costos, recetas e históricos"),
+            ("costos.editar", "Registrar costos manuales y editar recetas"),
+        ],
+    ),
+    (
         "Clientes",
         [
             ("clientes.ver", "Ver clientes"),
             ("clientes.crear", "Crear clientes"),
             ("clientes.editar", "Editar clientes"),
             ("clientes.eliminar", "Eliminar clientes"),
+            ("clientes.fusionar", "Fusionar clientes duplicados"),
         ],
     ),
     (
@@ -61,10 +69,41 @@ CATALOGO: List[Tuple[str, List[Tuple[str, str]]]] = [
             ("ingresos.crear", "Registrar ingresos"),
             ("ingresos.editar", "Editar ingresos"),
             ("ingresos.resolver", "Resolver productos nuevos de un ingreso"),
+            ("ingresos.pagar", "Pagar compras a crédito"),
+        ],
+    ),
+    (
+        "Proveedores",
+        [
+            ("proveedores.ver", "Ver proveedores"),
+            ("proveedores.crear", "Crear proveedores"),
+            ("proveedores.editar", "Editar proveedores"),
+            ("proveedores.eliminar", "Eliminar proveedores"),
         ],
     ),
     ("Reportes", [("reportes.ver", "Ver y exportar reportes")]),
+    (
+        "Balance",
+        [
+            ("balance.ver", "Ver y exportar el balance general"),
+            (
+                "balance.editar",
+                "Crear bolsillos y apartar/liberar dinero para gastos vitales",
+            ),
+        ],
+    ),
+    (
+        "Feedback",
+        [
+            ("feedback.crear", "Enviar comentarios, ideas y reportes de error"),
+            ("feedback.gestionar", "Revisar y gestionar el feedback del equipo"),
+        ],
+    ),
     ("Usuarios", [("usuarios.gestionar", "Gestionar usuarios")]),
+    (
+        "Nómina",
+        [("nomina.descontar", "Descontar nómina y consultar historial/reporte")],
+    ),
     ("Permisos", [("permisos.gestionar", "Gestionar permisos por rol")]),
 ]
 
@@ -100,6 +139,11 @@ PERMISOS_POR_DEFECTO: Dict[RolUsuario, List[str]] = {
         "ingresos.ver",
         "ingresos.crear",
         "ingresos.editar",
+        "ingresos.pagar",
+        "proveedores.ver",
+        "proveedores.crear",
+        "proveedores.editar",
+        "feedback.crear",
     ],
     # Mesero: toma pedidos, cobra, gestiona clientes y ve la caja (solo lectura).
     RolUsuario.MESERO: [
@@ -112,6 +156,7 @@ PERMISOS_POR_DEFECTO: Dict[RolUsuario, List[str]] = {
         "ventas.editar",
         "ventas.cobrar",
         "caja.ver",
+        "feedback.crear",
     ],
 }
 

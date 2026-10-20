@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import (
     Cliente,
+    DescuentoNomina,
     DetalleFactura,
     EstadoFactura,
     Factura,
@@ -20,7 +21,7 @@ from app.db.models import (
 )
 from app.api.deps import require_permiso
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
-from app.crud import crud_caja
+from app.crud import crud_caja, crud_nomina
 from app.schemas.reportes import (
     FilaCartera,
     FilaCierreCaja,
@@ -31,6 +32,7 @@ from app.schemas.reportes import (
     ReporteCaja,
     ReporteCartera,
     ReporteInventario,
+    ReporteNomina,
     ReporteTopProductos,
     ReporteVentas,
     VentaPorDia,
@@ -62,7 +64,14 @@ def _rango_hasta(hasta: Optional[str]) -> Optional[datetime]:
 
 
 def _filtro_periodo(desde: Optional[str], hasta: Optional[str]):
-    """Filtro combinado de rango sobre Factura.fecha."""
+    """Filtro combinado de rango sobre Factura.fecha.
+
+    Las fechas son días calendario exactos en hora de Colombia: `desde` entra a
+    las 00:00 y `hasta` cubre el día completo. Cada venta se fecha cuando se
+    factura (`Factura.fecha`), no cuando se cobra ni según el turno de caja. Por
+    eso una venta de las 00:30 cuenta en el día nuevo aunque la caja siga
+    abierta desde el día anterior.
+    """
     cond = []
     inicio = _rango_desde(desde)
     fin = _rango_hasta(hasta)
@@ -326,6 +335,12 @@ def _resumen_cartera(reporte: ReporteCartera) -> list[tuple[str, float | int]]:
 
 
 def _datos_caja(db: Session, desde: str | None, hasta: str | None) -> ReporteCaja:
+    # OJO: el filtro de fechas es por `fecha_apertura` del turno, no por la fecha
+    # de cada movimiento. Un turno se reporta completo (todas sus ventas y
+    # movimientos) bajo el día en que abrió, aunque cruce medianoche. Es
+    # intencional: permite "ver todas las cajas abiertas entre X e Y". No cuadra
+    # uno a uno con el reporte de Ventas del día calendario cuando el turno
+    # cruza medianoche. Solo se listan turnos cerrados.
     query = db.query(TurnoCaja).filter(TurnoCaja.abierta == False)  # noqa: E712
     inicio = _rango_desde(desde)
     fin = _rango_hasta(hasta)
@@ -534,6 +549,78 @@ def _resumen_inventario(reporte: ReporteInventario) -> list[tuple[str, float | i
     ]
 
 
+# ---------------------------------------------------------------- Nómina
+
+
+def _datos_nomina(
+    db: Session,
+    desde: str | None,
+    hasta: str | None,
+    usuario_id: int | None = None,
+) -> ReporteNomina:
+    inicio = _rango_desde(desde)
+    fin = _rango_hasta(hasta)
+    cond = []
+    if inicio:
+        cond.append(DescuentoNomina.fecha >= inicio)
+    if fin:
+        cond.append(DescuentoNomina.fecha < fin)
+    if usuario_id:
+        cond.append(DescuentoNomina.usuario_id == usuario_id)
+
+    filas = (
+        db.query(DescuentoNomina)
+        .filter(*cond)
+        .order_by(DescuentoNomina.fecha.desc(), DescuentoNomina.id.desc())
+        .all()
+    )
+    return ReporteNomina(
+        desde=desde,
+        hasta=hasta,
+        generado=get_colombia_time(),
+        descuentos=len(filas),
+        monto_total=round(sum(d.monto for d in filas), 2),
+        facturas_afectadas_total=sum(d.facturas_afectadas for d in filas),
+        items=[crud_nomina.fila_descuento(d) for d in filas],
+    )
+
+
+HEADER_NOMINA = [
+    "Fecha",
+    "Empleado",
+    "Cliente",
+    "Monto",
+    "Saldo después",
+    "Facturas",
+    "Aplicado por",
+    "Nota",
+]
+
+
+def _filas_nomina(reporte: ReporteNomina) -> list[list]:
+    return [
+        [
+            i.fecha,
+            i.usuario_nombre,
+            i.cliente_nombre,
+            i.monto,
+            i.saldo_pendiente,
+            i.facturas_afectadas,
+            i.registrado_por,
+            i.nota or "",
+        ]
+        for i in reporte.items
+    ]
+
+
+def _resumen_nomina(reporte: ReporteNomina) -> list[tuple[str, float | int]]:
+    return [
+        ("Descuentos", reporte.descuentos),
+        ("Monto descontado", reporte.monto_total),
+        ("Facturas afectadas", reporte.facturas_afectadas_total),
+    ]
+
+
 # ---------------------------------------------------------------- Endpoints (JSON)
 
 
@@ -573,6 +660,17 @@ def reporte_caja(
 @router.get("/inventario", response_model=ReporteInventario)
 def reporte_inventario(db: Session = Depends(get_db)):
     return _datos_inventario(db)
+
+
+@router.get("/nomina", response_model=ReporteNomina)
+def reporte_nomina(
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    usuario_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("nomina.descontar")),
+):
+    return _datos_nomina(db, desde, hasta, usuario_id)
 
 
 # ---------------------------------------------------------------- Endpoints (export)
@@ -731,5 +829,27 @@ def exportar_inventario(formato: str, db: Session = Depends(get_db)):
         {2, 4},
         _resumen_inventario(reporte),
         "inventario",
+        formato,
+    )
+
+
+@router.get("/nomina/exportar")
+def exportar_nomina(
+    formato: str,
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    usuario_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("nomina.descontar")),
+):
+    reporte = _datos_nomina(db, desde, hasta, usuario_id)
+    return _exportar_dos_formatos(
+        "Descuentos de nómina",
+        _cabeceras(reporte, desde, hasta),
+        HEADER_NOMINA,
+        _filas_nomina(reporte),
+        {3, 4},
+        _resumen_nomina(reporte),
+        "nomina",
         formato,
     )

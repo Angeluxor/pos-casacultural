@@ -7,6 +7,7 @@ export type Producto = {
   nombre: string
   precio: number
   stock: number
+  misma_unidad_compra_venta: boolean
 }
 
 export type ProductoCreate = {
@@ -14,11 +15,13 @@ export type ProductoCreate = {
   nombre: string
   precio: number
   stock_inicial: number
+  misma_unidad_compra_venta?: boolean
 }
 
 export type ProductoUpdate = {
   nombre?: string
   precio?: number
+  misma_unidad_compra_venta?: boolean
 }
 
 export type TipoMovimientoInventario =

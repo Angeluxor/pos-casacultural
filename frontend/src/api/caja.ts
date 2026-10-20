@@ -38,6 +38,7 @@ export type RegistroCaja = {
   referencia: string
   forma_pago: FormaPago
   monto: number
+  categoria: string | null
   observacion: string | null
 }
 
@@ -46,7 +47,29 @@ export type MovimientoCajaCreate = {
   referencia: string
   monto: number
   forma_pago: FormaPago
+  categoria?: string
   observacion?: string
+}
+
+export const CATEGORIAS_ENTRADA = [
+  'Aporte cultural',
+  'Donación',
+  'Evento',
+  'Otro ingreso',
+] as const
+
+export const CATEGORIAS_SALIDA = [
+  'Arriendo',
+  'Servicios',
+  'Nómina',
+  'Gasto menor',
+  'Pago a proveedor',
+  'Devolución',
+  'Otro gasto',
+] as const
+
+export function categoriasDe(tipo: 'Entrada' | 'Salida'): readonly string[] {
+  return tipo === 'Entrada' ? CATEGORIAS_ENTRADA : CATEGORIAS_SALIDA
 }
 
 export type AbrirCajaDatos = {

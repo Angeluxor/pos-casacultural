@@ -5,6 +5,9 @@ import './index.css'
 import './App.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider.tsx'
+import { instalarCapturaErrores } from './lib/feedbackContext.ts'
+
+instalarCapturaErrores()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

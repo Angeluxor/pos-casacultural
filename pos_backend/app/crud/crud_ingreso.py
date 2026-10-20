@@ -5,33 +5,46 @@ líneas que pueden ser: un producto existente, un producto nuevo (se crea con
 código autogenerado) o un ítem libre de tipo "Otros". El total es obligatorio y
 no se edita; el estado se deriva de cuánto se conoce de las líneas.
 
-Los ingresos quedan atados al turno de caja abierto. Si se pagan en Efectivo o
-Transferencia, descuentan de la caja del turno (es una salida de dinero al
-proveedor); Crédito y Donación no mueven la caja.
+Un ingreso puede registrarse desde la caja activa o directamente en el balance
+general:
+
+- **Caja activa**: exige turno abierto. Efectivo/Transferencia descuentan de la
+  caja del turno (salida al proveedor); Crédito y Donación no mueven dinero.
+- **Balance general**: no exige caja ni mueve efectivo/banco. Efectivo y
+  Transferencia se consideran pagados por fuera del POS; Crédito queda como
+  cuenta por pagar y Donación no genera deuda.
 """
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from app.core.timezone import BOGOTA_TZ
+from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.core.orden import ordenar
+from app.core.categorias_caja import (
+    CATEGORIA_COMPRA_INVENTARIO,
+    CATEGORIA_PAGO_PROVEEDOR,
+)
 from app.db.models import (
     EstadoIngreso,
     FormaPago,
     FormaPagoIngreso,
+    FuentePagoIngreso,
     IngresoInventario,
     IngresoInventarioItem,
     Kardex,
     Producto,
+    Proveedor,
     RegistroCaja,
     TipoItemIngreso,
     TipoMovimientoCaja,
     TipoMovimientoInventario,
+    TurnoCaja,
 )
-from app.schemas.ingreso import IngresoCreate, IngresoUpdate
+from app.schemas.ingreso import IngresoCreate, IngresoUpdate, PagarIngreso
+from app.crud import crud_proveedor
 
 # Formas de pago del ingreso que mueven dinero en la caja del turno.
 FORMAS_CON_CAJA = {FormaPagoIngreso.EFECTIVO, FormaPagoIngreso.TRANSFERENCIA}
@@ -39,6 +52,8 @@ _FORMA_CAJA = {
     FormaPagoIngreso.EFECTIVO: FormaPago.EFECTIVO,
     FormaPagoIngreso.TRANSFERENCIA: FormaPago.TRANSFERENCIA,
 }
+# Formas con las que se puede pagar una compra a crédito.
+FORMAS_PAGO_CREDITO = {FormaPago.EFECTIVO, FormaPago.TRANSFERENCIA}
 
 # Diferencia de centavos tolerada al comparar la suma de líneas con el total.
 _TOLERANCIA = 0.01
@@ -73,7 +88,12 @@ def _calcular_estado(items, total: float) -> EstadoIngreso:
 
 
 def _obtener_o_404(db: Session, ingreso_id: int) -> IngresoInventario:
-    ingreso = db.query(IngresoInventario).filter(IngresoInventario.id == ingreso_id).first()
+    ingreso = (
+        db.query(IngresoInventario)
+        .options(joinedload(IngresoInventario.proveedor_rel))
+        .filter(IngresoInventario.id == ingreso_id)
+        .first()
+    )
     if not ingreso:
         raise HTTPException(status_code=404, detail="Ingreso no encontrado")
     return ingreso
@@ -145,18 +165,50 @@ def _crear_item(db: Session, ingreso: IngresoInventario, linea, usuario_id: int)
     )
 
 
-def crear_ingreso(db: Session, turno_caja_id: int, datos: IngresoCreate, usuario_id: int):
+def crear_ingreso(
+    db: Session,
+    turno_caja_id: Optional[int],
+    datos: IngresoCreate,
+    usuario_id: int,
+):
     if not datos.items:
         raise HTTPException(status_code=400, detail="El ingreso debe tener al menos un ítem.")
 
+    # La fuente de pago decide si el ingreso se ata a un turno de caja. En modo
+    # balance general no hay turno ni movimiento de caja, aunque la forma sea
+    # efectivo o transferencia: se considera pagado por fuera del POS.
+    usa_caja = datos.fuente_pago == FuentePagoIngreso.CAJA
+    if usa_caja and turno_caja_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Debe abrir la caja para registrar un ingreso con fuente "
+                "«Caja activa», o elegir «Balance general»."
+            ),
+        )
+    if not usa_caja:
+        turno_caja_id = None
+
+    # Las compras de contado/transferencia y las donaciones no son cuentas por
+    # pagar. Solo una compra a crédito nace pendiente de pago.
+    es_credito = datos.forma_pago == FormaPagoIngreso.CREDITO
+    forma_pago_pago = _FORMA_CAJA.get(datos.forma_pago)
+    proveedor = crud_proveedor.resolver_proveedor(
+        db, proveedor_id=datos.proveedor_id, nombre=datos.proveedor
+    )
     ingreso = IngresoInventario(
         usuario_id=usuario_id,
         turno_caja_id=turno_caja_id,
-        proveedor=datos.proveedor,
+        fuente_pago=datos.fuente_pago,
+        proveedor_id=proveedor.id if proveedor else None,
         forma_pago=datos.forma_pago,
         total=datos.total,
         observacion=datos.observacion,
         estado=EstadoIngreso.PARCIAL,
+        pagado=not es_credito,
+        fecha_pago=get_colombia_time() if forma_pago_pago else None,
+        pagado_por_id=usuario_id if forma_pago_pago else None,
+        forma_pago_pago=forma_pago_pago,
     )
     db.add(ingreso)
     db.flush()
@@ -168,7 +220,7 @@ def crear_ingreso(db: Session, turno_caja_id: int, datos: IngresoCreate, usuario
     db.refresh(ingreso)
     ingreso.estado = _calcular_estado(ingreso.items, ingreso.total)
 
-    if datos.forma_pago in FORMAS_CON_CAJA:
+    if usa_caja and datos.forma_pago in FORMAS_CON_CAJA:
         db.add(
             RegistroCaja(
                 turno_caja_id=turno_caja_id,
@@ -177,7 +229,8 @@ def crear_ingreso(db: Session, turno_caja_id: int, datos: IngresoCreate, usuario
                 referencia=f"Ingreso #{ingreso.id}",
                 forma_pago=_FORMA_CAJA[datos.forma_pago],
                 monto=datos.total,
-                observacion=datos.proveedor or "Ingreso de inventario",
+                categoria=CATEGORIA_COMPRA_INVENTARIO,
+                observacion=proveedor.nombre if proveedor else "Ingreso de inventario",
             )
         )
 
@@ -188,8 +241,23 @@ def crear_ingreso(db: Session, turno_caja_id: int, datos: IngresoCreate, usuario
 
 def editar_ingreso(db: Session, ingreso_id: int, datos: IngresoUpdate):
     ingreso = _obtener_o_404(db, ingreso_id)
+    if ingreso.forma_pago == FormaPagoIngreso.CREDITO and ingreso.pagado:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede editar un ingreso a crédito que ya fue pagado.",
+        )
 
     cambios = datos.model_dump(exclude_unset=True, exclude={"items"})
+    # El proveedor se resuelve aparte: se puede enviar el id de uno existente o
+    # solo el nombre (se crea si no existe).
+    proporciono_proveedor = bool({"proveedor_id", "proveedor"} & datos.model_fields_set)
+    cambios.pop("proveedor_id", None)
+    cambios.pop("proveedor", None)
+    if proporciono_proveedor:
+        proveedor = crud_proveedor.resolver_proveedor(
+            db, proveedor_id=datos.proveedor_id, nombre=datos.proveedor
+        )
+        ingreso.proveedor_id = proveedor.id if proveedor else None
     for campo, valor in cambios.items():
         setattr(ingreso, campo, valor)
 
@@ -206,6 +274,67 @@ def editar_ingreso(db: Session, ingreso_id: int, datos: IngresoUpdate):
     db.flush()
     db.refresh(ingreso)
     ingreso.estado = _calcular_estado(ingreso.items, ingreso.total)
+    db.commit()
+    db.refresh(ingreso)
+    return ingreso
+
+
+def pagar_ingreso(
+    db: Session, ingreso_id: int, datos: PagarIngreso, usuario_id: int
+):
+    """Paga una compra a crédito y registra la salida de caja correspondiente.
+
+    El pago se hace por el total del ingreso (no se manejan abonos parciales).
+    Solo se permite efectivo o transferencia, y exige una caja abierta porque
+    el dinero sale de uno de sus dos bolsillos.
+    """
+    ingreso = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.id == ingreso_id)
+        .with_for_update()
+        .first()
+    )
+    if not ingreso:
+        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
+
+    if ingreso.forma_pago != FormaPagoIngreso.CREDITO:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo las compras registradas como Crédito se pueden pagar.",
+        )
+    if ingreso.pagado:
+        raise HTTPException(status_code=400, detail="Este ingreso ya está pagado.")
+    if datos.forma_pago not in FORMAS_PAGO_CREDITO:
+        raise HTTPException(
+            status_code=400,
+            detail="El pago de una compra a crédito debe ser en efectivo o transferencia.",
+        )
+
+    turno = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()  # noqa: E712
+    if not turno:
+        raise HTTPException(
+            status_code=400,
+            detail="Debe abrir la caja antes de pagar una compra a crédito.",
+        )
+
+    if (ingreso.total or 0) > 0:
+        db.add(
+            RegistroCaja(
+                turno_caja_id=turno.id,
+                usuario_id=usuario_id,
+                tipo=TipoMovimientoCaja.SALIDA,
+                referencia=f"Pago ingreso #{ingreso.id}",
+                forma_pago=datos.forma_pago,
+                monto=ingreso.total,
+                categoria=CATEGORIA_PAGO_PROVEEDOR,
+                observacion=ingreso.proveedor or "Pago de compra a crédito",
+            )
+        )
+
+    ingreso.pagado = True
+    ingreso.fecha_pago = get_colombia_time()
+    ingreso.pagado_por_id = usuario_id
+    ingreso.forma_pago_pago = datos.forma_pago
     db.commit()
     db.refresh(ingreso)
     return ingreso
@@ -237,7 +366,11 @@ def obtener_ingresos(
     orden: Optional[str] = None,
     direccion: Optional[str] = None,
 ):
-    query = db.query(IngresoInventario)
+    query = (
+        db.query(IngresoInventario)
+        .outerjoin(Proveedor, IngresoInventario.proveedor_id == Proveedor.id)
+        .options(contains_eager(IngresoInventario.proveedor_rel))
+    )
     if desde:
         try:
             d = date.fromisoformat(desde)
@@ -265,7 +398,7 @@ def obtener_ingresos(
             {
                 "id": IngresoInventario.id,
                 "fecha": IngresoInventario.fecha,
-                "proveedor": IngresoInventario.proveedor,
+                "proveedor": Proveedor.nombre,
                 "forma_pago": IngresoInventario.forma_pago,
                 "total": IngresoInventario.total,
                 "estado": IngresoInventario.estado,

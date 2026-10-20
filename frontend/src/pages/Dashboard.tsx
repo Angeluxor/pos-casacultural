@@ -20,12 +20,28 @@ function etiquetaDia(iso: string): string {
   })
 }
 
+function etiquetaMesCorta(mes: string): string {
+  const [anio, numero] = mes.split('-').map(Number)
+  return new Date(anio, numero - 1, 1).toLocaleDateString('es-CO', {
+    month: 'short',
+  })
+}
+
+function etiquetaMesLarga(mes: string): string {
+  const [anio, numero] = mes.split('-').map(Number)
+  return new Date(anio, numero - 1, 1).toLocaleDateString('es-CO', {
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 export function Dashboard() {
   const { usuario } = useAuth()
   const [datos, setDatos] = useState<DashboardResumen | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [verTodoBajoStock, setVerTodoBajoStock] = useState(false)
+  const [vistaVentas, setVistaVentas] = useState<'semanal' | 'mensual'>('semanal')
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -44,6 +60,15 @@ export function Dashboard() {
   }, [cargar])
 
   const maxDia = datos ? Math.max(...datos.ventas_ultimos_7_dias.map((d) => d.total), 1) : 1
+  const maxMes = datos
+    ? Math.max(...datos.ventas_ultimos_12_meses.map((m) => m.total), 1)
+    : 1
+  const total12m = datos
+    ? datos.ventas_ultimos_12_meses.reduce((suma, m) => suma + m.total, 0)
+    : 0
+  const facturas12m = datos
+    ? datos.ventas_ultimos_12_meses.reduce((suma, m) => suma + m.cantidad, 0)
+    : 0
 
   return (
     <div className="pagina">
@@ -80,6 +105,14 @@ export function Dashboard() {
               <small>ventas acumuladas</small>
             </div>
             <div className="mini-tarjeta">
+              <span className="mini-tarjeta__label">Ventas del mes</span>
+              <strong>{moneda.format(datos.kpis.ventas_mes_total)}</strong>
+              <small>
+                {datos.kpis.ventas_mes_cantidad} factura
+                {datos.kpis.ventas_mes_cantidad === 1 ? '' : 's'} este mes
+              </small>
+            </div>
+            <div className="mini-tarjeta">
               <span className="mini-tarjeta__label">Cartera por cobrar</span>
               <strong>{moneda.format(datos.kpis.cartera_total)}</strong>
               <small>
@@ -96,46 +129,117 @@ export function Dashboard() {
               </small>
             </div>
             <div className="mini-tarjeta">
-              <span className="mini-tarjeta__label">Caja</span>
-              {datos.caja.abierta ? (
-                <>
-                  <strong>
-                    {moneda.format(datos.caja.esperado_efectivo)} /{' '}
-                    {moneda.format(datos.caja.esperado_banco)}
-                  </strong>
-                  <small>Turno #{datos.caja.turno_id} · esperado Ef / Ban</small>
-                </>
-              ) : (
-                <>
-                  <strong>Cerrada</strong>
-                  <small>sin turno abierto</small>
-                </>
-              )}
+              <span className="mini-tarjeta__label">Caja disponible</span>
+              <strong
+                className={
+                  datos.caja.disponible < 0 ? 'mini-tarjeta__valor--alerta' : undefined
+                }
+              >
+                {moneda.format(datos.caja.disponible)}
+              </strong>
+              <small>
+                {datos.caja.abierta
+                  ? `Turno #${datos.caja.turno_id}`
+                  : datos.caja.turno_id
+                    ? `Último cierre #${datos.caja.turno_id}`
+                    : 'Sin turnos'}{' '}
+                · Total{' '}
+                {moneda.format(
+                  datos.caja.esperado_efectivo + datos.caja.esperado_banco,
+                )}
+                {datos.caja.reservado > 0 &&
+                  ` · Reservado ${moneda.format(datos.caja.reservado)}`}
+              </small>
             </div>
           </div>
 
           <div className="dash-grid">
             <div className="dash-col">
               <section className="panel">
-                <h3>Ventas últimos 7 días</h3>
-                <div className="barras">
-                  {datos.ventas_ultimos_7_dias.map((d) => (
-                    <div
-                      className="barra-col"
-                      key={d.fecha}
-                      title={`${etiquetaDia(d.fecha)}: ${moneda.format(d.total)} (${d.cantidad})`}
+                <div className="panel__head">
+                  <h3>Ventas</h3>
+                  <div
+                    className="fichas fichas--compactas"
+                    role="group"
+                    aria-label="Período de ventas"
+                  >
+                    <button
+                      type="button"
+                      className={
+                        vistaVentas === 'semanal' ? 'ficha ficha--activa' : 'ficha'
+                      }
+                      aria-pressed={vistaVentas === 'semanal'}
+                      onClick={() => setVistaVentas('semanal')}
                     >
-                      <span className="barra-valor">
-                        {d.total > 0 ? moneda.format(d.total) : ''}
-                      </span>
-                      <div
-                        className="barra-fill"
-                        style={{ height: `${Math.max((d.total / maxDia) * 100, 2)}%` }}
-                      />
-                      <span className="barra-label">{etiquetaDia(d.fecha)}</span>
-                    </div>
-                  ))}
+                      7 días
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        vistaVentas === 'mensual' ? 'ficha ficha--activa' : 'ficha'
+                      }
+                      aria-pressed={vistaVentas === 'mensual'}
+                      onClick={() => setVistaVentas('mensual')}
+                    >
+                      12 meses
+                    </button>
+                  </div>
                 </div>
+                <p className="ayuda">
+                  {vistaVentas === 'semanal'
+                    ? 'Ventas de los últimos 7 días.'
+                    : datos.ventas_ultimos_12_meses.length > 0
+                      ? `Ventas de ${etiquetaMesLarga(
+                          datos.ventas_ultimos_12_meses[0].mes,
+                        )} a ${etiquetaMesLarga(
+                          datos.ventas_ultimos_12_meses[
+                            datos.ventas_ultimos_12_meses.length - 1
+                          ].mes,
+                        )}.`
+                      : 'Ventas de los últimos 12 meses.'}
+                </p>
+                {vistaVentas === 'semanal' ? (
+                  <div className="barras">
+                    {datos.ventas_ultimos_7_dias.map((d) => (
+                      <div
+                        className="barra-col"
+                        key={d.fecha}
+                        title={`${etiquetaDia(d.fecha)}: ${moneda.format(d.total)} (${d.cantidad})`}
+                      >
+                        <span className="barra-valor">
+                          {d.total > 0 ? moneda.format(d.total) : ''}
+                        </span>
+                        <div
+                          className="barra-fill"
+                          style={{ height: `${Math.max((d.total / maxDia) * 100, 2)}%` }}
+                        />
+                        <span className="barra-label">{etiquetaDia(d.fecha)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="barras barras--mes">
+                      {datos.ventas_ultimos_12_meses.map((m) => (
+                        <div
+                          className="barra-col"
+                          key={m.mes}
+                          title={`${etiquetaMesLarga(m.mes)}: ${moneda.format(m.total)} (${m.cantidad})`}
+                        >
+                          <div
+                            className="barra-fill"
+                            style={{ height: `${Math.max((m.total / maxMes) * 100, 2)}%` }}
+                          />
+                          <span className="barra-label">{etiquetaMesCorta(m.mes)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="ayuda">
+                      Total 12 meses: {moneda.format(total12m)} · {facturas12m} factura
+                      {facturas12m === 1 ? '' : 's'}.
+                    </p>
+                  </>
+                )}
               </section>
 
               <section className="panel">

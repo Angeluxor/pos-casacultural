@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatoFecha, moneda } from '../lib/formato'
+import { useAuth } from '../auth/useAuth'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenLocal, type Accesores } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
@@ -7,16 +8,19 @@ import {
   consultarCaja,
   consultarCartera,
   consultarInventario,
+  consultarNomina,
   consultarTopProductos,
   consultarVentas,
   descargarReporte,
   type FilaCartera,
   type FilaCierreCaja,
+  type FilaDescuentoNomina,
   type FilaInventario,
   type FilaTopProducto,
   type ReporteCaja,
   type ReporteCartera,
   type ReporteInventario,
+  type ReporteNomina,
   type ReporteTopProductos,
   type ReporteVentas,
   type TipoReporte,
@@ -70,12 +74,24 @@ const ACC_INVENTARIO: Accesores<FilaInventario> = {
   valor: (i) => i.valor,
 }
 
+const ACC_NOMINA: Accesores<FilaDescuentoNomina> = {
+  fecha: (i) => i.fecha,
+  usuario_nombre: (i) => i.usuario_nombre,
+  cliente_nombre: (i) => i.cliente_nombre,
+  monto: (i) => i.monto,
+  saldo_pendiente: (i) => i.saldo_pendiente,
+  facturas_afectadas: (i) => i.facturas_afectadas,
+  registrado_por: (i) => i.registrado_por,
+  nota: (i) => i.nota ?? '',
+}
+
 const TABS: { id: TipoReporte; label: string; conFechas: boolean }[] = [
   { id: 'ventas', label: 'Ventas', conFechas: true },
   { id: 'top-productos', label: 'Más vendidos', conFechas: true },
   { id: 'cartera', label: 'Cartera', conFechas: false },
   { id: 'caja', label: 'Cierres de caja', conFechas: true },
   { id: 'inventario', label: 'Inventario', conFechas: false },
+  { id: 'nomina', label: 'Nómina', conFechas: true },
 ]
 
 function aIso(d: Date): string {
@@ -88,8 +104,17 @@ function par(efectivo: number, banco: number): string {
 }
 
 export function Reportes() {
+  const { tienePermiso } = useAuth()
+  // El reporte de nómina expone deuda y descuentos de empleados: exige el
+  // permiso específico además del acceso a Reportes.
+  const tabs = TABS.filter(
+    (t) => t.id !== 'nomina' || tienePermiso('nomina.descontar'),
+  )
   const [tipo, setTipo] = useState<TipoReporte>('ventas')
-  const tab = TABS.find((t) => t.id === tipo) ?? TABS[0]
+  const tab = tabs.find((t) => t.id === tipo) ?? tabs[0]
+  // Si el permiso cambia y la pestaña activa deja de estar disponible, se
+  // renderiza la primera pestaña visible.
+  const tipoActivo = tab.id
   const [desde, setDesde] = useState(() =>
     aIso(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
   )
@@ -106,12 +131,12 @@ export function Reportes() {
       </header>
 
       <div className="fichas" role="tablist" aria-label="Tipos de reporte">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
-            aria-selected={t.id === tipo}
-            className={t.id === tipo ? 'ficha ficha--activa' : 'ficha'}
+            aria-selected={t.id === tipoActivo}
+            className={t.id === tipoActivo ? 'ficha ficha--activa' : 'ficha'}
             onClick={() => setTipo(t.id)}
           >
             {t.label}
@@ -147,9 +172,16 @@ export function Reportes() {
         </button>
       </div>
 
+      {tab.id === 'caja' && (
+        <p className="ayuda">
+          Filtra por la fecha de apertura del turno: un turno que cruza medianoche
+          se reporta completo en el día en que abrió, no en el día en que cerró.
+        </p>
+      )}
+
       <ReporteVista
-        key={`${tipo}|${desde}|${hasta}|${tick}`}
-        tipo={tipo}
+        key={`${tipoActivo}|${desde}|${hasta}|${tick}`}
+        tipo={tipoActivo}
         conFechas={tab.conFechas}
         desde={desde}
         hasta={hasta}
@@ -172,6 +204,8 @@ function ReporteVista({ tipo, conFechas, desde, hasta }: VistaProps & { tipo: Ti
       return <CajaReporte conFechas={conFechas} desde={desde} hasta={hasta} />
     case 'inventario':
       return <InventarioReporte />
+    case 'nomina':
+      return <NominaReporte conFechas={conFechas} desde={desde} hasta={hasta} />
   }
 }
 
@@ -669,5 +703,82 @@ function FormaPagoLista({ items }: { items: { forma_pago: string; monto: number 
         ))}
       </ul>
     </section>
+  )
+}
+
+function NominaReporte({ conFechas, desde, hasta }: VistaProps) {
+  const { datos, cargando, error } = useReporte<ReporteNomina>(() =>
+    consultarNomina(conFechas ? desde : undefined, conFechas ? hasta : undefined),
+  )
+  const { items, orden, direccion, alternar } = useOrdenLocal(
+    datos?.items ?? [],
+    ACC_NOMINA,
+  )
+  return (
+    <>
+      <BotonesExportar tipo="nomina" conFechas={conFechas} desde={desde} hasta={hasta} disabled={cargando} />
+      <Cuerpo cargando={cargando} error={error} vacio={!datos || datos.items.length === 0}>
+        {datos && (
+          <>
+            <Tarjetas
+              items={[
+                { label: 'Descuentos', valor: String(datos.descuentos) },
+                { label: 'Monto descontado', valor: moneda.format(datos.monto_total) },
+                {
+                  label: 'Facturas afectadas',
+                  valor: String(datos.facturas_afectadas_total),
+                },
+              ]}
+            />
+            <div className="tabla-wrap">
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <ThOrdenable campo="fecha" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Fecha
+                    </ThOrdenable>
+                    <ThOrdenable campo="usuario_nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Empleado
+                    </ThOrdenable>
+                    <ThOrdenable campo="cliente_nombre" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Cliente
+                    </ThOrdenable>
+                    <ThOrdenable campo="monto" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Monto
+                    </ThOrdenable>
+                    <ThOrdenable campo="saldo_pendiente" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Saldo después
+                    </ThOrdenable>
+                    <ThOrdenable campo="facturas_afectadas" orden={orden} direccion={direccion} onOrdenar={alternar} className="derecha">
+                      Facturas
+                    </ThOrdenable>
+                    <ThOrdenable campo="registrado_por" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Aplicado por
+                    </ThOrdenable>
+                    <ThOrdenable campo="nota" orden={orden} direccion={direccion} onOrdenar={alternar}>
+                      Nota
+                    </ThOrdenable>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((i) => (
+                    <tr key={i.id}>
+                      <td>{formatoFecha(i.fecha)}</td>
+                      <td>{i.usuario_nombre}</td>
+                      <td>{i.cliente_nombre}</td>
+                      <td className="derecha">{moneda.format(i.monto)}</td>
+                      <td className="derecha">{moneda.format(i.saldo_pendiente)}</td>
+                      <td className="derecha">{i.facturas_afectadas}</td>
+                      <td>{i.registrado_por}</td>
+                      <td>{i.nota ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Cuerpo>
+    </>
   )
 }

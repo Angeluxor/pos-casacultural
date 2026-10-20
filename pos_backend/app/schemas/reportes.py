@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
 
+from app.schemas.nomina import FilaDescuentoNomina
+
 
 class FilaVentaDetalle(BaseModel):
     id: int
@@ -131,3 +133,13 @@ class ReporteInventario(BaseModel):
     unidades_totales: int
     valor_inventario: float
     items: List[FilaInventario]
+
+
+class ReporteNomina(BaseModel):
+    desde: Optional[str] = None
+    hasta: Optional[str] = None
+    generado: datetime
+    descuentos: int
+    monto_total: float
+    facturas_afectadas_total: int
+    items: List[FilaDescuentoNomina]

@@ -23,6 +23,18 @@ export type ClienteUpdate = {
   correo?: string | null
 }
 
+export type ClienteFusion = {
+  destino_id: number
+  origen_ids: number[]
+  completar_datos?: boolean
+}
+
+export type ClienteFusionResultado = {
+  cliente: Cliente
+  facturas_reasignadas: number
+  clientes_eliminados: number
+}
+
 export async function listarClientes(): Promise<Cliente[]> {
   const r = await apiFetch<Pagina<Cliente>>('/api/clientes/?limit=1000')
   return r.items
@@ -54,4 +66,8 @@ export function actualizarCliente(id: number, data: ClienteUpdate): Promise<Clie
 
 export function eliminarCliente(id: number): Promise<void> {
   return apiFetch<void>(`/api/clientes/${id}`, { method: 'DELETE' })
+}
+
+export function fusionarClientes(data: ClienteFusion): Promise<ClienteFusionResultado> {
+  return apiJson<ClienteFusionResultado>('/api/clientes/fusionar', 'POST', data)
 }

@@ -23,7 +23,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     await iniciarSesion(username, password)
-    setUsuario(await obtenerUsuarioActual())
+    try {
+      setUsuario(await obtenerUsuarioActual())
+    } catch (err) {
+      // No dejar un token almacenado si la sesión no quedó válida (p. ej.
+      // usuario desactivado entre el login y /me).
+      clearToken()
+      throw err
+    }
   }, [])
 
   const logout = useCallback(() => {

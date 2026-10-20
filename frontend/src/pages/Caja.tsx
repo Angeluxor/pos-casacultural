@@ -10,6 +10,7 @@ import {
   obtenerMovimientos,
   obtenerResumenVentasTurno,
   registrarMovimiento,
+  categoriasDe,
   type FacturaPendienteCierre,
   type RegistroCaja,
   type ResumenVentasTurno,
@@ -35,8 +36,38 @@ const ACCESORES_MOVIMIENTOS: Accesores<RegistroCaja> = {
   fecha: (m) => m.fecha,
   tipo: (m) => m.tipo,
   referencia: (m) => m.referencia,
+  categoria: (m) => m.categoria ?? '',
   forma_pago: (m) => m.forma_pago ?? '',
   monto: (m) => m.monto,
+}
+
+type FilaCategoria = {
+  categoria: string
+  cantidad: number
+  entradas: number
+  salidas: number
+  neto: number
+}
+
+function resumirCategorias(movimientos: RegistroCaja[]): FilaCategoria[] {
+  const mapa = new Map<string, FilaCategoria>()
+  for (const m of movimientos) {
+    if (m.tipo !== 'Entrada' && m.tipo !== 'Salida') continue
+    const categoria = m.categoria ?? 'Sin categoría'
+    const fila =
+      mapa.get(categoria) ??
+      { categoria, cantidad: 0, entradas: 0, salidas: 0, neto: 0 }
+    fila.cantidad += 1
+    if (m.tipo === 'Entrada') {
+      fila.entradas += m.monto
+      fila.neto += m.monto
+    } else {
+      fila.salidas += m.monto
+      fila.neto -= m.monto
+    }
+    mapa.set(categoria, fila)
+  }
+  return [...mapa.values()].sort((a, b) => a.categoria.localeCompare(b.categoria))
 }
 
 function bucketDe(forma_pago: FormaPago): Bucket {
@@ -65,6 +96,7 @@ export function Caja() {
   const [movModal, setMovModal] = useState(false)
   const [cerrarModal, setCerrarModal] = useState(false)
   const [histModal, setHistModal] = useState(false)
+  const [categoriaFiltro, setCategoriaFiltro] = useState('Todas')
 
   const cargar = useCallback(async () => {
     try {
@@ -98,7 +130,28 @@ export function Caja() {
   const esperadoBanco =
     (turno?.saldo_inicial_banco ?? 0) + entradas.banco - salidas.banco
 
-  const movsOrdenados = useOrdenLocal(movimientos, ACCESORES_MOVIMIENTOS, {
+  const categoriasDisponibles = useMemo(
+    () =>
+      [...new Set(movimientos.map((m) => m.categoria ?? 'Sin categoría'))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [movimientos],
+  )
+
+  const movimientosFiltrados = useMemo(
+    () =>
+      categoriaFiltro === 'Todas'
+        ? movimientos
+        : movimientos.filter((m) => (m.categoria ?? 'Sin categoría') === categoriaFiltro),
+    [movimientos, categoriaFiltro],
+  )
+
+  const resumenCategorias = useMemo(
+    () => resumirCategorias(movimientos),
+    [movimientos],
+  )
+
+  const movsOrdenados = useOrdenLocal(movimientosFiltrados, ACCESORES_MOVIMIENTOS, {
     campo: 'fecha',
     direccion: 'desc',
   })
@@ -195,60 +248,120 @@ export function Caja() {
               detalle="Aún no hay entradas ni salidas en este turno."
             />
           ) : (
-            <div className="tabla-wrap tabla-wrap--cards">
-              <table className="tabla tabla--cards">
-                <thead>
-                  <tr>
-                    <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                      Fecha
-                    </ThOrdenable>
-                    <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                      Tipo
-                    </ThOrdenable>
-                    <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                      Referencia
-                    </ThOrdenable>
-                    <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                      Forma de pago
-                    </ThOrdenable>
-                    <ThOrdenable
-                      campo="monto"
-                      orden={movsOrdenados.orden}
-                      direccion={movsOrdenados.direccion}
-                      onOrdenar={movsOrdenados.alternar}
-                      className="derecha"
-                    >
-                      Monto
-                    </ThOrdenable>
-                  </tr>
-                </thead>
-                <tbody>
-                  {movsOrdenados.items.map((m) => (
-                    <tr key={m.id}>
-                      <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
-                      <td data-label="Tipo">
-                        <span
-                          className={
-                            m.tipo === 'Salida'
-                              ? 'badge badge--off'
-                              : m.tipo === 'Entrada'
-                                ? 'badge badge--on'
-                                : 'badge badge--info'
-                          }
+            <>
+              {resumenCategorias.length > 0 && (
+                <section className="panel">
+                  <h3>Resumen por categoría</h3>
+                  <div className="tabla-wrap">
+                    <table className="tabla">
+                      <thead>
+                        <tr>
+                          <th>Categoría</th>
+                          <th className="derecha">Movimientos</th>
+                          <th className="derecha">Entradas</th>
+                          <th className="derecha">Salidas</th>
+                          <th className="derecha">Neto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resumenCategorias.map((fila) => (
+                          <tr key={fila.categoria}>
+                            <td>{fila.categoria}</td>
+                            <td className="derecha">{fila.cantidad}</td>
+                            <td className="derecha">{moneda.format(fila.entradas)}</td>
+                            <td className="derecha">{moneda.format(fila.salidas)}</td>
+                            <td className="derecha">{moneda.format(fila.neto)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              <div className="barra">
+                <label className="campo-fecha">
+                  <span>Categoría</span>
+                  <select
+                    value={categoriaFiltro}
+                    onChange={(e) => setCategoriaFiltro(e.target.value)}
+                  >
+                    <option value="Todas">Todas</option>
+                    {categoriasDisponibles.map((categoria) => (
+                      <option key={categoria} value={categoria}>
+                        {categoria}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span className="ayuda">
+                  {movsOrdenados.items.length} de {movimientos.length} movimiento(s)
+                </span>
+              </div>
+
+              {movsOrdenados.items.length === 0 ? (
+                <p className="ayuda">No hay movimientos con esa categoría.</p>
+              ) : (
+                <div className="tabla-wrap tabla-wrap--cards">
+                  <table className="tabla tabla--cards">
+                    <thead>
+                      <tr>
+                        <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                          Fecha
+                        </ThOrdenable>
+                        <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                          Tipo
+                        </ThOrdenable>
+                        <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                          Referencia
+                        </ThOrdenable>
+                        <ThOrdenable campo="categoria" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                          Categoría
+                        </ThOrdenable>
+                        <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                          Forma de pago
+                        </ThOrdenable>
+                        <ThOrdenable
+                          campo="monto"
+                          orden={movsOrdenados.orden}
+                          direccion={movsOrdenados.direccion}
+                          onOrdenar={movsOrdenados.alternar}
+                          className="derecha"
                         >
-                          {m.tipo}
-                        </span>
-                      </td>
-                      <td data-label="Referencia">{m.referencia}</td>
-                      <td data-label="Forma de pago">{m.forma_pago ?? '—'}</td>
-                      <td data-label="Monto" className="derecha">
-                        {moneda.format(m.monto)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          Monto
+                        </ThOrdenable>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {movsOrdenados.items.map((m) => (
+                        <tr key={m.id}>
+                          <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
+                          <td data-label="Tipo">
+                            <span
+                              className={
+                                m.tipo === 'Salida'
+                                  ? 'badge badge--off'
+                                  : m.tipo === 'Entrada'
+                                    ? 'badge badge--on'
+                                    : 'badge badge--info'
+                              }
+                            >
+                              {m.tipo}
+                            </span>
+                          </td>
+                          <td data-label="Referencia">{m.referencia}</td>
+                          <td data-label="Categoría">{m.categoria ?? '—'}</td>
+                          <td data-label="Forma de pago">{m.forma_pago ?? '—'}</td>
+                          <td data-label="Monto" className="derecha">
+                            {moneda.format(m.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -368,6 +481,7 @@ function FormAbrir({ onCerrar, onGuardado }: { onCerrar: () => void; onGuardado:
 
 function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuardado: () => void }) {
   const [tipo, setTipo] = useState<'Entrada' | 'Salida'>('Entrada')
+  const [categoria, setCategoria] = useState('')
   const [referencia, setReferencia] = useState('')
   const [monto, setMonto] = useState('')
   const [formaPago, setFormaPago] = useState<FormaPago>('Efectivo')
@@ -375,12 +489,18 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
+  const categorias = categoriasDe(tipo)
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
     const valor = Number(monto)
     if (!referencia.trim()) {
       setError('La referencia es obligatoria')
+      return
+    }
+    if (!categoria) {
+      setError('Selecciona una categoría')
       return
     }
     if (!valor || valor <= 0) {
@@ -394,6 +514,7 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
         referencia: referencia.trim(),
         monto: valor,
         forma_pago: formaPago,
+        categoria,
         observacion: observacion.trim() || undefined,
       })
       onGuardado()
@@ -409,17 +530,51 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Registrar movimiento</h2>
         {error && <p className="error">{error}</p>}
+        <div className="fila-campos">
+          <label>
+            Tipo
+            <select
+              value={tipo}
+              onChange={(e) => {
+                setTipo(e.target.value as 'Entrada' | 'Salida')
+                setCategoria('')
+              }}
+            >
+              <option value="Entrada">Entrada</option>
+              <option value="Salida">Salida</option>
+            </select>
+          </label>
+          <label>
+            Categoría
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              required
+            >
+              <option value="">Selecciona una categoría…</option>
+              {categorias.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label>
-          Tipo
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as 'Entrada' | 'Salida')}>
-            <option value="Entrada">Entrada</option>
-            <option value="Salida">Salida</option>
-          </select>
+          Referencia / concepto
+          <input
+            value={referencia}
+            onChange={(e) => setReferencia(e.target.value)}
+            placeholder={
+              categoria === 'Aporte cultural'
+                ? 'Ej.: Aporte cultural – Evento de octubre'
+                : 'Ej.: Arriendo de octubre'
+            }
+          />
         </label>
-        <label>
-          Referencia
-          <input value={referencia} onChange={(e) => setReferencia(e.target.value)} />
-        </label>
+        <p className="ayuda">
+          La categoría permite filtrar y resumir los movimientos del turno.
+        </p>
         <div className="fila-campos">
           <label>
             Monto
@@ -675,8 +830,10 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
   const [seleccion, setSeleccion] = useState<TurnoCajaHistorial | null>(null)
   const [movs, setMovs] = useState<RegistroCaja[]>([])
   const [cargandoMovs, setCargandoMovs] = useState(false)
+  const [categoriaHistorial, setCategoriaHistorial] = useState('Todas')
 
   useEffect(() => {
+    setCategoriaHistorial('Todas')
     if (!seleccion) {
       setMovs([])
       return
@@ -699,7 +856,23 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
   }, [seleccion])
 
   const items = datos?.items ?? []
-  const movsOrdenados = useOrdenLocal(movs, ACCESORES_MOVIMIENTOS, {
+  const categoriasHistorial = useMemo(
+    () =>
+      [...new Set(movs.map((m) => m.categoria ?? 'Sin categoría'))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [movs],
+  )
+  const movsHistorialFiltrados = useMemo(
+    () =>
+      categoriaHistorial === 'Todas'
+        ? movs
+        : movs.filter(
+            (m) => (m.categoria ?? 'Sin categoría') === categoriaHistorial,
+          ),
+    [movs, categoriaHistorial],
+  )
+  const movsOrdenados = useOrdenLocal(movsHistorialFiltrados, ACCESORES_MOVIMIENTOS, {
     campo: 'fecha',
     direccion: 'desc',
   })
@@ -830,48 +1003,77 @@ function HistorialTurnos({ onCerrar }: { onCerrar: () => void }) {
             ) : movs.length === 0 ? (
               <p className="ayuda">Este turno no tiene movimientos registrados.</p>
             ) : (
-              <div className="tabla-wrap tabla-wrap--cards">
-                <table className="tabla tabla--cards">
-                  <thead>
-                    <tr>
-                      <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                        Fecha
-                      </ThOrdenable>
-                      <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                        Tipo
-                      </ThOrdenable>
-                      <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                        Referencia
-                      </ThOrdenable>
-                      <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
-                        Forma de pago
-                      </ThOrdenable>
-                      <ThOrdenable
-                        campo="monto"
-                        orden={movsOrdenados.orden}
-                        direccion={movsOrdenados.direccion}
-                        onOrdenar={movsOrdenados.alternar}
-                        className="derecha"
-                      >
-                        Monto
-                      </ThOrdenable>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movsOrdenados.items.map((m) => (
-                      <tr key={m.id}>
-                        <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
-                        <td data-label="Tipo">{m.tipo}</td>
-                        <td data-label="Referencia">{m.referencia}</td>
-                        <td data-label="Forma de pago">{m.forma_pago ?? '—'}</td>
-                        <td data-label="Monto" className="derecha">
-                          {moneda.format(m.monto)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="barra">
+                  <label className="campo-fecha">
+                    <span>Categoría</span>
+                    <select
+                      value={categoriaHistorial}
+                      onChange={(e) => setCategoriaHistorial(e.target.value)}
+                    >
+                      <option value="Todas">Todas</option>
+                      {categoriasHistorial.map((categoria) => (
+                        <option key={categoria} value={categoria}>
+                          {categoria}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="ayuda">
+                    {movsOrdenados.items.length} de {movs.length} movimiento(s)
+                  </span>
+                </div>
+                {movsOrdenados.items.length === 0 ? (
+                  <p className="ayuda">No hay movimientos con esa categoría.</p>
+                ) : (
+                  <div className="tabla-wrap tabla-wrap--cards">
+                    <table className="tabla tabla--cards">
+                      <thead>
+                        <tr>
+                          <ThOrdenable campo="fecha" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                            Fecha
+                          </ThOrdenable>
+                          <ThOrdenable campo="tipo" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                            Tipo
+                          </ThOrdenable>
+                          <ThOrdenable campo="referencia" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                            Referencia
+                          </ThOrdenable>
+                          <ThOrdenable campo="categoria" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                            Categoría
+                          </ThOrdenable>
+                          <ThOrdenable campo="forma_pago" orden={movsOrdenados.orden} direccion={movsOrdenados.direccion} onOrdenar={movsOrdenados.alternar}>
+                            Forma de pago
+                          </ThOrdenable>
+                          <ThOrdenable
+                            campo="monto"
+                            orden={movsOrdenados.orden}
+                            direccion={movsOrdenados.direccion}
+                            onOrdenar={movsOrdenados.alternar}
+                            className="derecha"
+                          >
+                            Monto
+                          </ThOrdenable>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {movsOrdenados.items.map((m) => (
+                          <tr key={m.id}>
+                            <td data-label="Fecha">{formatoFecha(m.fecha)}</td>
+                            <td data-label="Tipo">{m.tipo}</td>
+                            <td data-label="Referencia">{m.referencia}</td>
+                            <td data-label="Categoría">{m.categoria ?? '—'}</td>
+                            <td data-label="Forma de pago">{m.forma_pago ?? '—'}</td>
+                            <td data-label="Monto" className="derecha">
+                              {moneda.format(m.monto)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
