@@ -3,21 +3,28 @@ Script de importacion de datos desde el Excel maestro (VB) hacia PostgreSQL (Neo
 Ejecutar desde pos_backend/ con:
   $env:PYTHONPATH = '.'; .\venv\Scripts\python scripts\importar_excel.py
 
-El archivo de origen se puede indicar con la variable de entorno `EXCEL_ORIGEN`;
-si no, se usa el Excel maestro por defecto.
+El archivo de origen se puede indicar con `--archivo` o con la variable de
+entorno `EXCEL_ORIGEN`; si no, se usa el Excel maestro por defecto.
 
 La importacion es **atomica**: todo se inserta en una sola transaccion y se hace
-un único `commit` al final. Si algo falla, no queda nada a medias. Pensado para
-correr sobre una base **vacía** (tras `TRUNCATE ... RESTART IDENTITY` o recrear
-el esquema con Alembic).
+un único `commit` al final. Si algo falla, no queda nada a medias.
+
+Con `--wipe` vacia las tablas operativas dentro de la misma transaccion y
+conserva `usuarios` y `permisos_rol`, para no perder el acceso. Usa `--usuario`
+para indicar que usuario existente queda como vendedor/cajero de los registros
+importados (por defecto `admin`). Si la base no tiene ningun usuario, crea el
+usuario legado `sistema` como respaldo.
 """
+import argparse
 import os
 import sys
 import openpyxl
 import bcrypt
 from datetime import datetime
+from sqlalchemy import text
 from app.core.timezone import BOGOTA_TZ
 
+from app.db.base_class import Base
 from app.db.session import SessionLocal
 from app.db.models import (
     Cliente, Producto, Factura, DetalleFactura, Pago, RegistroCaja, TurnoCaja,
@@ -80,6 +87,8 @@ ESTADO_FACTURA_MAP = {
     "pendiente": EstadoFactura.ABIERTA,
     "pagado parcial": EstadoFactura.PAGADO_PARCIAL,
     "anulada": EstadoFactura.ANULADA,
+    "credito": EstadoFactura.CREDITO,
+    "crédito": EstadoFactura.CREDITO,
 }
 
 
@@ -89,32 +98,118 @@ def map_forma_pago(val):
     return FORMA_PAGO_MAP.get(str(val).strip().lower(), FormaPago.OTRO)
 
 
-def map_estado_factura(val):
+def map_estado_factura(val, forma_pago=None):
     if val is None:
         return EstadoFactura.ABIERTA
-    return ESTADO_FACTURA_MAP.get(str(val).strip().lower(), EstadoFactura.ABIERTA)
+    estado = ESTADO_FACTURA_MAP.get(str(val).strip().lower(), EstadoFactura.ABIERTA)
+    # En el Excel las facturas a crédito vienen como PENDIENTE con forma de
+    # pago Crédito. Sin esta regla quedarían como Abierta y no aparecerían en
+    # la cartera ni en el dashboard como deuda.
+    if estado == EstadoFactura.ABIERTA and str(forma_pago or "").strip().lower() in {
+        "credito",
+        "crédito",
+    }:
+        return EstadoFactura.CREDITO
+    return estado
+
+
+def _tablas_operativas():
+    """Tablas que se vacian con --wipe, sin tocar usuarios ni permisos."""
+    preservar = {"usuarios", "permisos_rol"}
+    return [t for t in Base.metadata.sorted_tables if t.name not in preservar]
+
+
+def _wipe_operational_tables(db):
+    """Borra los datos operativos dentro de la transaccion actual.
+
+    Se usa DELETE en orden inverso al de dependencias (no TRUNCATE ... CASCADE)
+    porque `usuarios.cliente_id` referencia `clientes`: un CASCADE vaciaria
+    tambien la tabla de usuarios. Las secuencias se reinician para que los ids
+    importados vuelvan a empezar en 1.
+    """
+    tablas = _tablas_operativas()
+
+    # El vinculo usuario-cliente apunta a una tabla que se va a reimportar.
+    db.query(Usuario).update({Usuario.cliente_id: None})
+
+    for tabla in reversed(tablas):
+        db.execute(tabla.delete())
+
+    if db.get_bind().dialect.name == "postgresql":
+        for tabla in tablas:
+            id_col = tabla.columns.get("id")
+            if id_col is None or not id_col.primary_key:
+                continue
+            secuencia = db.execute(
+                text("SELECT pg_get_serial_sequence(:t, 'id')"), {"t": tabla.name}
+            ).scalar()
+            if secuencia:
+                db.execute(text(f"ALTER SEQUENCE {secuencia} RESTART WITH 1"))
+
+    print(
+        f"  Wipe: {len(tablas)} tablas operativas vaciadas; "
+        "usuarios y permisos preservados."
+    )
+
+
+def _resolver_usuario_importacion(db, username):
+    """Usa un usuario existente; solo crea `sistema` si la base esta vacia."""
+    usuario = db.query(Usuario).filter(Usuario.username == username).first()
+    if usuario is not None:
+        print(f"  Usuario para los registros: {usuario.username} (id={usuario.id})")
+        return usuario
+
+    if db.query(Usuario).count() > 0:
+        raise RuntimeError(
+            f"No existe el usuario '{username}'. Crealo antes o pasa --usuario "
+            "con un usuario existente."
+        )
+
+    usuario = Usuario(
+        username="sistema",
+        nombre="Usuario Sistema (importacion)",
+        hashed_password=bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode("utf-8"),
+        rol=RolUsuario.ADMIN,
+        activo=True,
+    )
+    db.add(usuario)
+    db.flush()
+    print(f"  Usuario sistema creado (id={usuario.id})")
+    return usuario
 
 
 def main():
-    print(f"Abriendo {ARCHIVO}...")
-    wb = openpyxl.load_workbook(ARCHIVO, read_only=True, data_only=True)
+    parser = argparse.ArgumentParser(description="Importa el Excel maestro al POS.")
+    parser.add_argument(
+        "--archivo",
+        default=ARCHIVO,
+        help="Ruta del Excel de origen (por defecto, EXCEL_ORIGEN o el maestro).",
+    )
+    parser.add_argument(
+        "--usuario",
+        default=os.getenv("USUARIO_IMPORTACION", "admin"),
+        help="Usuario existente que quedara como vendedor/cajero (por defecto admin).",
+    )
+    parser.add_argument(
+        "--wipe",
+        action="store_true",
+        help="Vacia las tablas operativas antes de importar, preservando usuarios y permisos.",
+    )
+    args = parser.parse_args()
+
+    print(f"Abriendo {args.archivo}...")
+    wb = openpyxl.load_workbook(args.archivo, read_only=True, data_only=True)
     db = SessionLocal()
 
     try:
+        if args.wipe:
+            _wipe_operational_tables(db)
+
         # ============================================================
-        # 0. Crear un usuario sistema para las FK obligatorias
+        # 0. Usuario existente para las FK obligatorias
         # ============================================================
-        usuario_sistema = Usuario(
-            username="sistema",
-            nombre="Usuario Sistema (importacion)",
-            hashed_password=bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode("utf-8"),
-            rol=RolUsuario.ADMIN,
-            activo=True,
-        )
-        db.add(usuario_sistema)
-        db.flush()
-        usuario_id = usuario_sistema.id
-        print(f"  Usuario sistema creado (id={usuario_id})")
+        usuario_importacion = _resolver_usuario_importacion(db, args.usuario)
+        usuario_id = usuario_importacion.id
 
         # ============================================================
         # 1. CLIENTES
@@ -215,7 +310,7 @@ def main():
             fecha = parse_datetime(row[1], row[2])
             cliente_nombre = safe_str(row[3]).lower()
             total = safe_float(row[4])
-            estado = map_estado_factura(row[6])
+            estado = map_estado_factura(row[6], row[5])
             saldo = safe_float(row[7])
 
             cliente_id = cliente_nombre_a_id.get(cliente_nombre)
