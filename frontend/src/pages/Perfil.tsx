@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { actualizarPerfil, cambiarPassword } from '../api/auth'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { CampoPassword } from '../components/CampoPassword'
 
 export function Perfil() {
@@ -14,6 +15,11 @@ export function Perfil() {
           <p className="ayuda">Gestiona tus datos y tu contraseña.</p>
         </div>
       </header>
+
+      <AyudaContextual
+        titulo="Tus datos de acceso"
+        detalle="El nombre se puede editar; el usuario y el rol no. Usa una contraseña que nadie más conozca y cámbiala si la compartiste. Si olvidaste la clave, un administrador puede restablecerla."
+      />
 
       <div className="perfil-grid">
         <section className="panel">

@@ -20,6 +20,7 @@ import {
 import type { FormaPago } from '../api/types'
 import { formatoFecha, moneda } from '../lib/formato'
 import { confirmarCierre } from '../lib/modal'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
@@ -197,6 +198,11 @@ export function Caja() {
           ) : null}
         </div>
       </header>
+
+      <AyudaContextual
+        titulo="Cómo cuadrar el turno"
+        detalle="El turno agrupa ventas, pagos y movimientos manuales. Abre con saldos iniciales, registra entradas o salidas con categoría y cierra con el saldo real. El cierre compara lo esperado contra lo real; lo reservado en bolsillos se consulta en Balance."
+      />
 
       {error && <p className="error">{error}</p>}
 

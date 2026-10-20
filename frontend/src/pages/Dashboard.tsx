@@ -3,6 +3,7 @@ import { obtenerDashboard, type DashboardResumen } from '../api/dashboard'
 import { moneda } from '../lib/formato'
 import { Vacio } from '../components/Vacio'
 import { CollageHero } from '../components/Collage'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { useAuth } from '../auth/useAuth'
 
 const ORDEN_ESTADOS = ['Abierta', 'Pagado Parcial', 'Pagada', 'Crédito', 'Anulada']
@@ -85,6 +86,11 @@ export function Dashboard() {
           </button>
         </div>
       </header>
+
+      <AyudaContextual
+        titulo="Qué estás viendo"
+        detalle="Ventas de hoy, últimos 7 días y mes, cartera, caja disponible y stock bajo. La caja disponible ya descuenta lo apartado en bolsillos. Cambia el gráfico entre 7 días y 12 meses."
+      />
 
       {error && <p className="error">{error}</p>}
 

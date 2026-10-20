@@ -9,6 +9,7 @@ import {
   type ClienteFusionResultado,
 } from '../api/clientes'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenServidor } from '../lib/orden'
@@ -107,6 +108,11 @@ export function Clientes() {
           </button>
         )}
       </header>
+
+      <AyudaContextual
+        titulo="Para qué sirve esta pantalla"
+        detalle="Registra y busca clientes, edita sus datos y fusiona duplicados. El documento es único y asocia las ventas a crédito y la cartera. Una fusión reasigna las facturas al cliente principal sin borrar historial."
+      />
 
       <div className="barra">
         <input

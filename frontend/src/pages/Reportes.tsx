@@ -3,6 +3,7 @@ import { formatoFecha, moneda } from '../lib/formato'
 import { useAuth } from '../auth/useAuth'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenLocal, type Accesores } from '../lib/orden'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Vacio } from '../components/Vacio'
 import {
   consultarCaja,
@@ -94,6 +95,48 @@ const TABS: { id: TipoReporte; label: string; conFechas: boolean }[] = [
   { id: 'nomina', label: 'Nómina', conFechas: true },
 ]
 
+const AYUDA_REPORTE: Record<
+  TipoReporte,
+  { titulo: string; detalle: string; pista: string }
+> = {
+  ventas: {
+    titulo: 'Ventas por día',
+    detalle:
+      'Muestra facturado, anulado y neto por día calendario en hora de Colombia. Los totales cubren todo el filtro, no solo la página visible.',
+    pista: 'Facturado, anulado y neto por día calendario',
+  },
+  'top-productos': {
+    titulo: 'Productos más vendidos',
+    detalle:
+      'Ordena los productos por cantidad y valor vendido en el período. Sirve para decidir qué reabastecer y qué rotar.',
+    pista: 'Productos con más salida por cantidad y valor',
+  },
+  cartera: {
+    titulo: 'Cartera por cobrar',
+    detalle:
+      'Muestra el saldo pendiente por cliente. No usa fechas: es la deuda actual, incluidos abonos parciales y facturas a crédito.',
+    pista: 'Saldo pendiente actual por cliente',
+  },
+  caja: {
+    titulo: 'Cierres de caja',
+    detalle:
+      'Filtra por la fecha de apertura del turno y muestra el turno completo, aunque haya cerrado después de medianoche. Solo aparecen turnos cerrados.',
+    pista: 'Cuadre de los turnos cerrados por fecha de apertura',
+  },
+  inventario: {
+    titulo: 'Inventario valorizado',
+    detalle:
+      'Es una foto del stock actual valorizado al costo vigente. No usa fechas; cambia cuando cambian las compras, los costos o el stock.',
+    pista: 'Stock actual y su valor al costo vigente',
+  },
+  nomina: {
+    titulo: 'Descuentos de nómina',
+    detalle:
+      'Lista los abonos aplicados a facturas a crédito de empleados, con monto, saldo pendiente, facturas afectadas y quién los registró.',
+    pista: 'Abonos a facturas de empleados descontados de nómina',
+  },
+}
+
 function aIso(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
@@ -130,19 +173,32 @@ export function Reportes() {
         </div>
       </header>
 
-      <div className="fichas" role="tablist" aria-label="Tipos de reporte">
+      <div
+        className="fichas"
+        role="tablist"
+        aria-label="Tipos de reporte"
+        aria-describedby="ayuda-reporte"
+      >
         {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={t.id === tipoActivo}
             className={t.id === tipoActivo ? 'ficha ficha--activa' : 'ficha'}
+            title={AYUDA_REPORTE[t.id].pista}
             onClick={() => setTipo(t.id)}
           >
             {t.label}
           </button>
         ))}
       </div>
+
+      <AyudaContextual
+        id="ayuda-reporte"
+        ariaLive
+        titulo={AYUDA_REPORTE[tab.id].titulo}
+        detalle={AYUDA_REPORTE[tab.id].detalle}
+      />
 
       <div className="barra">
         {tab.conFechas && (
@@ -171,13 +227,6 @@ export function Reportes() {
           Consultar
         </button>
       </div>
-
-      {tab.id === 'caja' && (
-        <p className="ayuda">
-          Filtra por la fecha de apertura del turno: un turno que cruza medianoche
-          se reporta completo en el día en que abrió, no en el día en que cerró.
-        </p>
-      )}
 
       <ReporteVista
         key={`${tipoActivo}|${desde}|${hasta}|${tick}`}

@@ -1709,7 +1709,7 @@ textarea:focus {
   max-width: 760px;
 }
 
-.ayuda-pestana {
+.ayuda-contextual {
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -1721,7 +1721,7 @@ textarea:focus {
   background: var(--tarjeta);
 }
 
-.ayuda-pestana__icono {
+.ayuda-contextual__icono {
   flex: none;
   width: 20px;
   height: 20px;
@@ -1737,13 +1737,13 @@ textarea:focus {
   color: var(--primario);
 }
 
-.ayuda-pestana strong {
+.ayuda-contextual strong {
   display: block;
   font-size: 13px;
   margin-bottom: 2px;
 }
 
-.ayuda-pestana p {
+.ayuda-contextual p {
   margin: 0;
   font-size: 13px;
   line-height: 1.45;

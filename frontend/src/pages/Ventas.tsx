@@ -16,6 +16,7 @@ import {
 import { listarProductos, type Producto } from '../api/productos'
 import { listarClientes, type Cliente } from '../api/clientes'
 import type { FormaPago } from '../api/types'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { Stepper } from '../components/Stepper'
 import { ThOrdenable } from '../components/ThOrdenable'
@@ -150,6 +151,11 @@ export function Ventas() {
           </button>
         )}
       </header>
+
+      <AyudaContextual
+        titulo="Cómo registrar y cobrar"
+        detalle="Crea facturas, cobra saldos y anula ventas. Para vender o cobrar debe haber una caja abierta. Una factura abierta se puede editar; al pagarse o pasar a crédito queda bloqueada. Anular devuelve el stock y exige un motivo."
+      />
 
       <div className="barra">
         <input

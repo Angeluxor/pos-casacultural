@@ -5,6 +5,7 @@ import {
   type PermisosResponse,
 } from '../api/permisos'
 import type { RolUsuario } from '../api/types'
+import { AyudaContextual } from '../components/AyudaContextual'
 
 // Roles editables, en el orden en que se muestran las columnas.
 const ROLES: RolUsuario[] = ['Cajero', 'Mesero']
@@ -77,6 +78,11 @@ export function Permisos() {
           {guardando ? 'Guardando…' : 'Guardar cambios'}
         </button>
       </header>
+
+      <AyudaContextual
+        titulo="Cómo funcionan los permisos"
+        detalle="Define qué puede hacer cada rol Cajero y Mesero. El Admin siempre tiene todo y no se edita. Al guardar se aplican al rol; cada usuario los recibe al iniciar sesión."
+      />
 
       {error && <p className="error">{error}</p>}
       {ok && <p className="ok">{ok}</p>}

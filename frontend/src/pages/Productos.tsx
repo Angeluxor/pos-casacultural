@@ -12,6 +12,7 @@ import {
   type Producto,
 } from '../api/productos'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
@@ -73,6 +74,11 @@ export function Productos() {
           )}
         </div>
       </header>
+
+      <AyudaContextual
+        titulo="Cómo se organiza el catálogo"
+        detalle="Aquí creas y editas productos, registras movimientos de stock y consultas el kardex. El stock cambia con ventas, compras, devoluciones y ajustes. El código no se puede cambiar después de crear el producto."
+      />
 
       <div className="barra">
         <input

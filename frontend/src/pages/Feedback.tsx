@@ -10,6 +10,7 @@ import {
 } from '../api/feedback'
 import type { Pagina, UsuarioSesion } from '../api/types'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { Vacio } from '../components/Vacio'
 import { formatoFecha } from '../lib/formato'
@@ -424,6 +425,11 @@ export function Feedback() {
           </p>
         </div>
       </header>
+
+      <AyudaContextual
+        titulo="Cómo gestionar el feedback"
+        detalle="Aquí llegan los comentarios, ideas y errores enviados desde el botón flotante. Filtra por estado, tipo, prioridad o texto; abre Gestionar para cambiar estado, prioridad, etiquetas, responsable y notas. Las capturas solo las ve quien tenga feedback.gestionar."
+      />
 
       <div className="barra">
         <input

@@ -7,6 +7,7 @@ import {
   type Proveedor,
 } from '../api/proveedores'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { useOrdenServidor } from '../lib/orden'
@@ -70,6 +71,11 @@ export function Proveedores() {
           </button>
         )}
       </header>
+
+      <AyudaContextual
+        titulo="Para qué sirven los proveedores"
+        detalle="Es el catálogo que puedes asociar a los ingresos de inventario. Si cambias el nombre, se actualiza en sus compras. Un proveedor con ingresos no se puede eliminar, para conservar la trazabilidad."
+      />
 
       <div className="barra">
         <input

@@ -14,6 +14,7 @@ import {
   type FilaInventarioBalance,
 } from '../api/balance'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { formatoFecha, moneda } from '../lib/formato'
 import { confirmarCierre } from '../lib/modal'
 
@@ -654,6 +655,11 @@ export function Balance() {
         </div>
       </header>
 
+      <AyudaContextual
+        titulo="Cómo leer el balance"
+        detalle="Activos, pasivos y patrimonio son un corte del momento actual; las fechas solo filtran el estado de resultados. La caja disponible descuenta lo apartado en bolsillos, que no cambian el total de activos ni la utilidad."
+      />
+
       <div className="barra">
         <label className="campo-fecha">
           <span>Resultados desde</span>
@@ -677,10 +683,6 @@ export function Balance() {
           Consultar
         </button>
       </div>
-      <p className="ayuda">
-        El balance de activos, pasivos y patrimonio es un corte al momento actual. Las fechas
-        filtran únicamente el estado de resultados.
-      </p>
 
       {error && <p className="error">{error}</p>}
       {errorExport && <p className="error">{errorExport}</p>}

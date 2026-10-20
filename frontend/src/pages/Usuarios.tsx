@@ -16,6 +16,7 @@ import {
 import type { Cliente } from '../api/clientes'
 import type { RolUsuario, Usuario } from '../api/types'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { CampoPassword } from '../components/CampoPassword'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
@@ -73,6 +74,11 @@ export function Usuarios() {
           + Nuevo usuario
         </button>
       </header>
+
+      <AyudaContextual
+        titulo="Qué puedes administrar aquí"
+        detalle="Crea usuarios, edita su rol y restablece contraseñas. Admin tiene acceso total; Cajero y Mesero dependen de Permisos. También puedes vincular un usuario a un cliente para descontar sus compras a crédito de la nómina."
+      />
 
       <div className="barra">
         <input

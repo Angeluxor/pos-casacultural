@@ -19,6 +19,7 @@ import {
 } from '../api/ingresos'
 import { listarProductos, type Producto } from '../api/productos'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { SelectorProveedor } from '../components/SelectorProveedor'
 import { ThOrdenable } from '../components/ThOrdenable'
@@ -106,6 +107,11 @@ export function Ingresos() {
           </button>
         )}
       </header>
+
+      <AyudaContextual
+        titulo="Qué registra esta pantalla"
+        detalle="Registra la entrada de mercancía al inventario con proveedor, ítems y forma de pago. «Caja activa» mueve efectivo o banco; «Balance general» no mueve la caja. Crédito queda como cuenta por pagar y se paga después desde aquí."
+      />
 
       {error && <p className="error">{error}</p>}
       {errorApertura && <p className="error">{errorApertura}</p>}

@@ -16,6 +16,7 @@ import {
   type ResumenCosto,
 } from '../api/costos'
 import { useAuth } from '../auth/useAuth'
+import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { Vacio } from '../components/Vacio'
@@ -268,20 +269,12 @@ export function Costos() {
         </button>
       </div>
 
-      <div
-        className="ayuda-pestana"
+      <AyudaContextual
         id="ayuda-pestana"
-        role="note"
-        aria-live="polite"
-      >
-        <span className="ayuda-pestana__icono" aria-hidden="true">
-          i
-        </span>
-        <div>
-          <strong>{AYUDA_PESTANA[pestana].titulo}</strong>
-          <p>{AYUDA_PESTANA[pestana].detalle}</p>
-        </div>
-      </div>
+        ariaLive
+        titulo={AYUDA_PESTANA[pestana].titulo}
+        detalle={AYUDA_PESTANA[pestana].detalle}
+      />
 
       {mensajeError && <p className="error">{mensajeError}</p>}
 
