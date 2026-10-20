@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { obtenerDashboard, type DashboardResumen } from '../api/dashboard'
 import { moneda } from '../lib/formato'
 import { Vacio } from '../components/Vacio'
+import { CollageHero } from '../components/Collage'
 import { useAuth } from '../auth/useAuth'
 
 const ORDEN_ESTADOS = ['Abierta', 'Pagado Parcial', 'Pagada', 'Crédito', 'Anulada']
@@ -77,9 +78,12 @@ export function Dashboard() {
           <h1>Hola, {usuario?.nombre}</h1>
           <p className="ayuda">Resumen del punto de venta de Casi Obsceno.</p>
         </div>
-        <button className="boton boton--secundario" onClick={() => void cargar()}>
-          Actualizar
-        </button>
+        <div className="pagina__acciones">
+          <CollageHero />
+          <button className="boton boton--secundario" onClick={() => void cargar()}>
+            Actualizar
+          </button>
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}

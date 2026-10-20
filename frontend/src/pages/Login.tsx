@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { CampoPassword } from '../components/CampoPassword'
+import { CollageFondo } from '../components/Collage'
 import { APP_VERSION } from '../lib/version'
 
 export function Login() {
@@ -32,9 +33,16 @@ export function Login() {
 
   return (
     <div className="pantalla">
+      <CollageFondo />
       <div className="tarjeta">
         <header className="marca">
-          <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo logo--login" />
+          <div className="marca__logo">
+            <img
+              src="/LogoCO-Photoroom.png"
+              alt="Logo Casi Obsceno"
+              className="logo logo--login"
+            />
+          </div>
           <h1>Casi Obsceno</h1>
           <span className="estado">Acceso al sistema</span>
           <span className="estado estado--version">v{APP_VERSION}</span>
