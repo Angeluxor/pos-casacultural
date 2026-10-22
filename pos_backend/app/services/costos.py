@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Dict, List, Optional, Set
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
@@ -35,6 +35,9 @@ from app.db.models import (
 from app.schemas.costos import CostoManualCreate, RecetaUpsert
 
 SEMANAS_VENTANA = 6
+# Los costos unitarios derivados se conservan con seis decimales. El dinero
+# (valor de la línea, totales, inventario) se redondea a centavos al final.
+PRECISION_COSTO = 6
 
 
 @dataclass
@@ -78,13 +81,21 @@ class RecetaCalculada:
 
 
 def promedio_compras(db: Session) -> Dict[int, float]:
-    """Costo promedio ponderado por producto según las líneas de compra."""
+    """Costo promedio ponderado por producto según las líneas de compra.
+
+    Se usa el valor real de la línea (lo que se pagó) dividido entre las
+    unidades compradas. Así una caja de 12 unidades por 10.000 no arrastra el
+    error de multiplicar un costo unitario redondeado (0,83 × 12 = 9,96).
+    """
     filas = (
         db.query(
             IngresoInventarioItem.producto_id,
             func.sum(
-                IngresoInventarioItem.costo_unitario
-                * IngresoInventarioItem.cantidad
+                func.coalesce(
+                    IngresoInventarioItem.valor,
+                    IngresoInventarioItem.costo_unitario
+                    * IngresoInventarioItem.cantidad,
+                )
             ),
             func.sum(IngresoInventarioItem.cantidad),
         )
@@ -95,7 +106,10 @@ def promedio_compras(db: Session) -> Dict[int, float]:
         .filter(
             IngresoInventario.anulada == False,  # noqa: E712
             IngresoInventarioItem.producto_id.isnot(None),
-            IngresoInventarioItem.costo_unitario.isnot(None),
+            or_(
+                IngresoInventarioItem.valor.isnot(None),
+                IngresoInventarioItem.costo_unitario.isnot(None),
+            ),
             IngresoInventarioItem.cantidad.isnot(None),
             IngresoInventarioItem.cantidad > 0,
         )
@@ -172,7 +186,7 @@ def costos_vigentes(db: Session) -> Dict[int, CostoVigente]:
             rendimiento = float(receta.rendimiento or 0.0)
             if completo and rendimiento > 0:
                 info: Optional[CostoVigente] = CostoVigente(
-                    round(total / rendimiento, 2), "Receta"
+                    round(total / rendimiento, PRECISION_COSTO), "Receta"
                 )
             else:
                 info = None
@@ -183,7 +197,8 @@ def costos_vigentes(db: Session) -> Dict[int, CostoVigente]:
             )
         elif producto_id in promedios:
             info = CostoVigente(
-                round(float(promedios[producto_id]), 2), "Costo promedio"
+                round(float(promedios[producto_id]), PRECISION_COSTO),
+                "Costo promedio",
             )
         else:
             info = None
@@ -236,7 +251,7 @@ def _evaluar_receta(
     rendimiento = float(receta.rendimiento or 0.0)
     if completo and rendimiento > 0:
         costo_total = round(total, 2)
-        costo_unitario = round(total / rendimiento, 2)
+        costo_unitario = round(total / rendimiento, PRECISION_COSTO)
     else:
         costo_total = None
         costo_unitario = None

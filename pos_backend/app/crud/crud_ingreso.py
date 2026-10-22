@@ -15,6 +15,7 @@ general:
   cuenta por pagar y Donación no genera deuda.
 """
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import HTTPException
@@ -75,7 +76,31 @@ def _valor_linea(tipo: TipoItemIngreso, cantidad: Optional[int], costo: Optional
     """Valor de una línea de producto: costo * cantidad (nulo si no hay costo)."""
     if tipo == TipoItemIngreso.OTROS or costo is None:
         return None
-    return round((cantidad or 0) * costo, 2)
+    return _redondear_dinero((cantidad or 0) * costo)
+
+
+def _redondear_dinero(valor: float) -> float:
+    """Redondea un monto a centavos con criterio comercial (mitad hacia arriba)."""
+    return float(
+        Decimal(str(valor)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+    )
+
+
+def _costo_unitario_desde_formato(costo_formato: float, unidades: int) -> float:
+    """Divide el costo de una caja/paquete sin arrastrar errores de float.
+
+    El costo unitario se conserva con seis decimales porque es un valor
+    derivado: el dinero real de la compra sigue siendo ``costo_formato``. Al
+    valorar inventario o calcular promedios se redondea el resultado final, no
+    este valor intermedio.
+    """
+    return float(
+        (Decimal(str(costo_formato)) / Decimal(unidades)).quantize(
+            Decimal("0.000001"), rounding=ROUND_HALF_UP
+        )
+    )
 
 
 def _normalizar_compra_producto(linea):
@@ -120,9 +145,9 @@ def _normalizar_compra_producto(linea):
                 status_code=400,
                 detail="El costo de la caja o paquete no puede ser negativo.",
             )
-        # Se conservan cuatro decimales para no perder centavos al dividir
+        # Se conservan seis decimales para no perder centavos al dividir
         # una caja entre muchas unidades.
-        costo = round(linea.costo_formato / factor, 4)
+        costo = _costo_unitario_desde_formato(linea.costo_formato, factor)
 
     return cantidad, factor, costo
 
@@ -213,7 +238,9 @@ def _crear_item(db: Session, ingreso: IngresoInventario, linea, usuario_id: int)
     ):
         # El valor de la compra es exactamente lo que se pagó por los
         # formatos, sin depender del redondeo del costo unitario.
-        valor = round(linea.cantidad_formatos * linea.costo_formato, 2)
+        valor = _redondear_dinero(
+            linea.cantidad_formatos * linea.costo_formato
+        )
     return IngresoInventarioItem(
         ingreso_id=ingreso.id,
         tipo=linea.tipo,
@@ -519,14 +546,16 @@ def editar_ingreso(
                                 "negativo."
                             ),
                         )
-                    costo = round(linea.costo_formato / factor, 4)
+                    costo = _costo_unitario_desde_formato(
+                        linea.costo_formato, factor
+                    )
                     item.costo_formato = linea.costo_formato
                 elif "costo_unitario" in campos:
                     costo = linea.costo_unitario
                     # Mantiene coherente el costo del formato con el unitario
                     # cuando la línea se compró por caja o paquete.
                     if factor > 1 and costo is not None:
-                        item.costo_formato = round(costo * factor, 2)
+                        item.costo_formato = _redondear_dinero(costo * factor)
                     else:
                         item.costo_formato = None
                 item.costo_unitario = costo
@@ -535,8 +564,8 @@ def editar_ingreso(
                     and linea.costo_formato is not None
                     and item.cantidad_formatos is not None
                 ):
-                    item.valor = round(
-                        item.cantidad_formatos * linea.costo_formato, 2
+                    item.valor = _redondear_dinero(
+                        item.cantidad_formatos * linea.costo_formato
                     )
                 else:
                     item.valor = _valor_linea(item.tipo, item.cantidad, costo)

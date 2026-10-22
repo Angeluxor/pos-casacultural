@@ -1,4 +1,6 @@
 """Pruebas del módulo de ingresos de inventario."""
+import pytest
+
 from .conftest import auth
 
 
@@ -663,3 +665,49 @@ def test_editar_costo_de_caja_recalcula_el_unitario(client, token_admin):
     assert actualizado["costo_formato"] == 36
     assert actualizado["costo_unitario"] == 3
     assert actualizado["valor"] == 72
+
+
+def test_costo_fraccionario_por_caja_no_desajusta_el_inventario(
+    client, token_admin
+):
+    producto = _crear_producto(
+        client, token_admin, codigo="FORM-DEC", nombre="Unidad suelta"
+    )
+
+    resp = client.post(
+        "/api/ingresos/",
+        headers=auth(token_admin),
+        json={
+            "fuente_pago": "Balance general",
+            "forma_pago": "Efectivo",
+            "total": 20,
+            "items": [
+                {
+                    "tipo": "Producto",
+                    "producto_id": producto["id"],
+                    "cantidad_formatos": 2,
+                    "unidades_por_formato": 12,
+                    "costo_formato": 10,
+                }
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    item = resp.json()["items"][0]
+    assert item["cantidad"] == 24
+    assert item["costo_unitario"] == pytest.approx(0.833333, abs=1e-6)
+    assert item["valor"] == 20
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    fila = next(
+        i for i in balance["inventario"] if i["producto_id"] == producto["id"]
+    )
+    assert fila["stock"] == 24
+    assert fila["costo_unitario"] == pytest.approx(0.833333, abs=1e-6)
+    assert fila["valor"] == 20
+
+    costos = client.get("/api/costos/resumen", headers=auth(token_admin)).json()
+    fila_costo = next(
+        f for f in costos if f["producto_id"] == producto["id"]
+    )
+    assert fila_costo["costo_vigente"] == pytest.approx(0.833333, abs=1e-6)

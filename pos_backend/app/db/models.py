@@ -578,10 +578,13 @@ class IngresoInventarioItem(Base):
     unidades_por_formato = Column(Integer, nullable=True)
     costo_formato = Column(Float, nullable=True)
     # Costo unitario opcional: se puede completar después al editar el ingreso.
-    # Si la compra fue por formato, se calcula como costo_formato / unidades.
+    # Si la compra fue por formato, se calcula como costo_formato / unidades
+    # y se conserva con más decimales que el dinero (es un valor derivado).
     costo_unitario = Column(Float, nullable=True)
     # Valor de la línea. Para "Otros" es el valor indicado; para productos es
-    # cantidad * costo_unitario y queda nulo mientras no se conozca el costo.
+    # el monto real de la compra (cantidad * costo_unitario, o el costo de los
+    # formatos). Es la fuente autoritativa para totales y promedios; queda nulo
+    # mientras no se conozca el costo.
     valor = Column(Float, nullable=True)
 
     ingreso = relationship("IngresoInventario", back_populates="items")

@@ -102,7 +102,10 @@ def _inventario(
             continue
         info = costos.get(producto.id)
         if info is not None:
-            costo = round(info.costo, 2)
+            # Se conserva la precisión del costo unitario y se redondea el
+            # valor total del inventario. Redondear antes de multiplicar
+            # desajusta productos con costo unitario fraccionario.
+            costo = info.costo
             origen = info.origen
         else:
             costo = round(float(producto.precio or 0.0), 2)
