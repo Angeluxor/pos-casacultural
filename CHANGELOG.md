@@ -20,8 +20,9 @@ internos de desarrollo; no existen tags publicados de esas versiones.
   la red se sincronizan con las claves de idempotencia existentes. La UI muestra
   un banner de estado, las operaciones pendientes y un botón de reintento.
 - **Cierre de caja protegido**: no se puede cerrar un turno mientras haya
-  operaciones offline pendientes. El cierre intenta sincronizarlas primero y se
-  bloquea si alguna queda con error.
+  operaciones offline pendientes. La UI exige sincronizar la cola y volver a
+  abrir el cuadro de cierre para recalcular los saldos; si alguna operación
+  queda con error, el cierre sigue bloqueado.
 - **Ventas offline con stock negativo**: si al sincronizar ya no alcanza el
   stock, la venta no se pierde: el stock queda negativo y la factura se marca
   con `requiere_revision` y una nota visible en Ventas.
