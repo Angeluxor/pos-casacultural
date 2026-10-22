@@ -209,6 +209,7 @@ def _resultados(
     cond_otros = [
         IngresoInventarioItem.tipo == TipoItemIngreso.OTROS,
         IngresoInventario.forma_pago != FormaPagoIngreso.DONACION,
+        IngresoInventario.anulada == False,  # noqa: E712
     ]
     if inicio:
         cond_otros.append(IngresoInventario.fecha >= inicio)
@@ -258,6 +259,7 @@ def _cuentas_por_pagar(
         .filter(
             IngresoInventario.forma_pago == FormaPagoIngreso.CREDITO,
             IngresoInventario.pagado == False,  # noqa: E712
+            IngresoInventario.anulada == False,  # noqa: E712
         )
         .order_by(IngresoInventario.fecha.asc(), IngresoInventario.id.asc())
         .all()

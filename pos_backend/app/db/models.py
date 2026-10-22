@@ -63,6 +63,8 @@ class TipoMovimientoInventario(str, enum.Enum):
     SALIDA_VENTA = "Salida por Venta"
     DEVOLUCION = "Devolución"
     AJUSTE = "Ajuste"
+    # Reversión del stock cuando se anula un ingreso de inventario.
+    SALIDA_ANULACION = "Salida por anulación"
 
 class MotivoAjuste(str, enum.Enum):
     DERRAMA = "Derrama o pérdida"
@@ -504,9 +506,22 @@ class IngresoInventario(Base):
     # Forma en que se pagó una compra a crédito (Efectivo/Transferencia).
     forma_pago_pago = Column(Enum(FormaPago), nullable=True)
 
+    # Anulación: un ingreso anulado se conserva para auditoría, pero deja de
+    # contar en inventario, caja, costos y cuentas por pagar.
+    anulada = Column(Boolean, default=False, nullable=False, index=True)
+    motivo_anulacion = Column(String, nullable=True)
+    fecha_anulacion = Column(DateTime(timezone=True), nullable=True)
+    anulada_por_id = Column(
+        Integer,
+        ForeignKey("usuarios.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     usuario = relationship("Usuario", foreign_keys=[usuario_id])
     turno = relationship("TurnoCaja")
     pagado_por = relationship("Usuario", foreign_keys=[pagado_por_id])
+    anulada_por = relationship("Usuario", foreign_keys=[anulada_por_id])
     proveedor_rel = relationship("Proveedor", back_populates="ingresos")
     items = relationship(
         "IngresoInventarioItem",
@@ -530,8 +545,14 @@ class IngresoInventario(Base):
         return self.pagado_por.nombre if self.pagado_por else None
 
     @property
+    def anulada_por_nombre(self) -> str | None:
+        return self.anulada_por.nombre if self.anulada_por else None
+
+    @property
     def estado_pago(self) -> str:
         """Estado legible para la lista y el detalle de ingresos."""
+        if self.anulada:
+            return "No aplica"
         if self.forma_pago == FormaPagoIngreso.CREDITO:
             return "Pagado" if self.pagado else "Pendiente"
         if self.forma_pago == FormaPagoIngreso.DONACION:
@@ -547,8 +568,17 @@ class IngresoInventarioItem(Base):
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
     # Nombre del producto nuevo o concepto del ítem "Otros".
     concepto = Column(String, nullable=True)
+    # Cantidad total en unidades de venta (el stock y el kardex usan esta
+    # cifra, no la cantidad de cajas o paquetes).
     cantidad = Column(Integer, nullable=True)
+    # Compra por formato: por ejemplo 2 cajas de 12 unidades. ``cantidad``
+    # guarda 24 y estos campos conservan cómo se digitó la compra para poder
+    # mostrarla y auditarla. Son nulos cuando se compra por unidad.
+    cantidad_formatos = Column(Integer, nullable=True)
+    unidades_por_formato = Column(Integer, nullable=True)
+    costo_formato = Column(Float, nullable=True)
     # Costo unitario opcional: se puede completar después al editar el ingreso.
+    # Si la compra fue por formato, se calcula como costo_formato / unidades.
     costo_unitario = Column(Float, nullable=True)
     # Valor de la línea. Para "Otros" es el valor indicado; para productos es
     # cantidad * costo_unitario y queda nulo mientras no se conozca el costo.

@@ -70,6 +70,7 @@ CATALOGO: List[Tuple[str, List[Tuple[str, str]]]] = [
             ("ingresos.editar", "Editar ingresos"),
             ("ingresos.resolver", "Resolver productos nuevos de un ingreso"),
             ("ingresos.pagar", "Pagar compras a crédito"),
+            ("ingresos.anular", "Anular ingresos por error"),
         ],
     ),
     (

@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.db.models import FuentePagoIngreso, Usuario
 from app.api.deps import require_permiso
 from app.schemas.ingreso import (
+    AnularIngreso,
     IngresoCreate,
     IngresoUpdate,
     IngresoResponse,
@@ -76,7 +77,22 @@ def editar_ingreso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permiso("ingresos.editar")),
 ):
-    return crud_ingreso.editar_ingreso(db=db, ingreso_id=ingreso_id, datos=datos)
+    return crud_ingreso.editar_ingreso(
+        db=db, ingreso_id=ingreso_id, datos=datos, usuario_id=current_user.id
+    )
+
+
+@router.post("/{ingreso_id}/anular", response_model=IngresoResponse)
+def anular_ingreso(
+    ingreso_id: int,
+    datos: AnularIngreso,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ingresos.anular")),
+):
+    """Anula un ingreso por error y revierte stock, caja y cuentas por pagar."""
+    return crud_ingreso.anular_ingreso(
+        db=db, ingreso_id=ingreso_id, motivo=datos.motivo, usuario_id=current_user.id
+    )
 
 
 @router.post("/{ingreso_id}/resolver", response_model=IngresoResponse)

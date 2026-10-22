@@ -951,10 +951,25 @@ textarea:focus {
 }
 
 .input-mini {
-  width: 72px;
+  width: 110px;
+  box-sizing: border-box;
   padding: 6px 8px;
   font-size: 14px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* En campos angostos los botones nativos del input numérico roban espacio y
+   pueden ocultar el último decimal. Se ocultan y se deja solo la escritura. */
+.input-mini::-webkit-outer-spin-button,
+.input-mini::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input-mini[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .seleccion-chip {

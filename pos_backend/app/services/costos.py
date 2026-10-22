@@ -88,7 +88,12 @@ def promedio_compras(db: Session) -> Dict[int, float]:
             ),
             func.sum(IngresoInventarioItem.cantidad),
         )
+        .join(
+            IngresoInventario,
+            IngresoInventario.id == IngresoInventarioItem.ingreso_id,
+        )
         .filter(
+            IngresoInventario.anulada == False,  # noqa: E712
             IngresoInventarioItem.producto_id.isnot(None),
             IngresoInventarioItem.costo_unitario.isnot(None),
             IngresoInventarioItem.cantidad.isnot(None),
@@ -539,6 +544,7 @@ def historial_producto(
         )
         .outerjoin(Proveedor, Proveedor.id == IngresoInventario.proveedor_id)
         .filter(
+            IngresoInventario.anulada == False,  # noqa: E712
             IngresoInventarioItem.producto_id == producto_id,
             IngresoInventarioItem.costo_unitario.isnot(None),
             IngresoInventarioItem.cantidad.isnot(None),
@@ -606,6 +612,7 @@ def _puntos_ventana(db: Session, desde: datetime) -> Dict[int, List[PuntoCosto]]
         .outerjoin(Proveedor, Proveedor.id == IngresoInventario.proveedor_id)
         .filter(
             IngresoInventario.fecha >= desde,
+            IngresoInventario.anulada == False,  # noqa: E712
             IngresoInventarioItem.producto_id.isnot(None),
             IngresoInventarioItem.costo_unitario.isnot(None),
             IngresoInventarioItem.cantidad.isnot(None),

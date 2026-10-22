@@ -25,6 +25,7 @@ from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.core.orden import ordenar
 from app.core.categorias_caja import (
     CATEGORIA_COMPRA_INVENTARIO,
+    CATEGORIA_DEVOLUCION,
     CATEGORIA_PAGO_PROVEEDOR,
 )
 from app.db.models import (
@@ -75,6 +76,55 @@ def _valor_linea(tipo: TipoItemIngreso, cantidad: Optional[int], costo: Optional
     if tipo == TipoItemIngreso.OTROS or costo is None:
         return None
     return round((cantidad or 0) * costo, 2)
+
+
+def _normalizar_compra_producto(linea):
+    """Resuelve una línea de producto comprada por unidad o por formato.
+
+    Devuelve ``(cantidad_total, unidades_por_formato, costo_unitario)``. Si la
+    línea trae ``cantidad_formatos`` (por ejemplo 2 cajas), la cantidad total
+    se calcula multiplicando por ``unidades_por_formato`` (12). Si trae
+    ``costo_formato`` (el costo de la caja), el unitario se calcula dividiendo.
+    Cuando no se envían datos de formato se mantiene el comportamiento
+    anterior: ``cantidad`` y ``costo_unitario`` se usan tal cual.
+    """
+    factor = (
+        linea.unidades_por_formato
+        if linea.unidades_por_formato is not None
+        else 1
+    )
+    if factor < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Las unidades por caja o paquete deben ser mayores a 0.",
+        )
+
+    cantidad = linea.cantidad or 0
+    if linea.cantidad_formatos is not None:
+        if linea.cantidad_formatos <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="La cantidad de cajas o paquetes debe ser mayor a 0.",
+            )
+        cantidad = linea.cantidad_formatos * factor
+    if cantidad <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La cantidad de cada producto debe ser mayor a 0.",
+        )
+
+    costo = linea.costo_unitario
+    if linea.costo_formato is not None:
+        if linea.costo_formato < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="El costo de la caja o paquete no puede ser negativo.",
+            )
+        # Se conservan cuatro decimales para no perder centavos al dividir
+        # una caja entre muchas unidades.
+        costo = round(linea.costo_formato / factor, 4)
+
+    return cantidad, factor, costo
 
 
 def _calcular_estado(items, total: float) -> EstadoIngreso:
@@ -129,10 +179,7 @@ def _crear_item(db: Session, ingreso: IngresoInventario, linea, usuario_id: int)
             valor=linea.valor,
         )
 
-    cantidad = linea.cantidad or 0
-    if cantidad <= 0:
-        raise HTTPException(status_code=400, detail="La cantidad de cada producto debe ser mayor a 0.")
-
+    cantidad, factor, costo_unitario = _normalizar_compra_producto(linea)
     if linea.tipo == TipoItemIngreso.PRODUCTO:
         if not linea.producto_id:
             raise HTTPException(status_code=400, detail="Falta el producto de una de las líneas.")
@@ -149,19 +196,35 @@ def _crear_item(db: Session, ingreso: IngresoInventario, linea, usuario_id: int)
             nombre=linea.concepto.strip(),
             precio=linea.precio,
             stock=0,
+            # Si se compra por caja/paquete y se vende por unidad, la unidad
+            # de compra y la de venta no son la misma.
+            misma_unidad_compra_venta=factor == 1,
         )
         db.add(producto)
         db.flush()
 
     _entrada_compra(db, producto, cantidad, usuario_id, referencia)
+    es_formato = factor > 1
+    valor = _valor_linea(linea.tipo, cantidad, costo_unitario)
+    if (
+        es_formato
+        and linea.cantidad_formatos is not None
+        and linea.costo_formato is not None
+    ):
+        # El valor de la compra es exactamente lo que se pagó por los
+        # formatos, sin depender del redondeo del costo unitario.
+        valor = round(linea.cantidad_formatos * linea.costo_formato, 2)
     return IngresoInventarioItem(
         ingreso_id=ingreso.id,
         tipo=linea.tipo,
         producto_id=producto.id,
         concepto=linea.concepto.strip() if linea.concepto else None,
         cantidad=cantidad,
-        costo_unitario=linea.costo_unitario,
-        valor=_valor_linea(linea.tipo, cantidad, linea.costo_unitario),
+        cantidad_formatos=linea.cantidad_formatos if es_formato else None,
+        unidades_por_formato=factor if es_formato else None,
+        costo_formato=linea.costo_formato if es_formato else None,
+        costo_unitario=costo_unitario,
+        valor=valor,
     )
 
 
@@ -239,15 +302,183 @@ def crear_ingreso(
     return ingreso
 
 
-def editar_ingreso(db: Session, ingreso_id: int, datos: IngresoUpdate):
+def _movimiento_compra(db: Session, ingreso_id: int) -> Optional[RegistroCaja]:
+    """Salida de caja generada automáticamente al registrar el ingreso."""
+    return (
+        db.query(RegistroCaja)
+        .filter(
+            RegistroCaja.referencia == f"Ingreso #{ingreso_id}",
+            RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
+        )
+        .first()
+    )
+
+
+def _turno_abierto(db: Session) -> Optional[TurnoCaja]:
+    return db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()  # noqa: E712
+
+
+def _sincronizar_caja_ingreso(
+    db: Session,
+    ingreso: IngresoInventario,
+    fuente: FuentePagoIngreso,
+    forma: FormaPagoIngreso,
+    usuario_id: int,
+):
+    """Mantiene coherente la salida de caja al corregir la cabecera.
+
+    La fuente «Caja activa» con efectivo o transferencia genera una salida por
+    el total. Si el usuario corrige la forma de pago o la fuente, se actualiza
+    (o se elimina) ese movimiento. Por seguridad, no se toca un movimiento de
+    un turno ya cerrado: en ese caso se pide registrar el ajuste manualmente.
+    """
+    desea_movimiento = fuente == FuentePagoIngreso.CAJA and forma in FORMAS_CON_CAJA
+    existente = _movimiento_compra(db, ingreso.id)
+
+    if desea_movimiento:
+        forma_caja = _FORMA_CAJA[forma]
+        if existente:
+            if existente.forma_pago == forma_caja:
+                return
+            turno = (
+                db.query(TurnoCaja)
+                .filter(TurnoCaja.id == existente.turno_caja_id)
+                .first()
+            )
+            if not turno or not turno.abierta:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "La caja donde se registró este ingreso ya está cerrada; "
+                        "no se puede cambiar la forma de pago. Registra el ajuste "
+                        "manualmente en la caja."
+                    ),
+                )
+            existente.forma_pago = forma_caja
+            return
+
+        turno = None
+        if ingreso.turno_caja_id:
+            turno = (
+                db.query(TurnoCaja)
+                .filter(TurnoCaja.id == ingreso.turno_caja_id)
+                .first()
+            )
+        if not turno or not turno.abierta:
+            turno = _turno_abierto(db)
+        if not turno:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Debe abrir la caja para registrar la salida del ingreso "
+                    "con la nueva forma de pago."
+                ),
+            )
+        db.add(
+            RegistroCaja(
+                turno_caja_id=turno.id,
+                usuario_id=usuario_id,
+                tipo=TipoMovimientoCaja.SALIDA,
+                referencia=f"Ingreso #{ingreso.id}",
+                forma_pago=forma_caja,
+                monto=ingreso.total,
+                categoria=CATEGORIA_COMPRA_INVENTARIO,
+                observacion=ingreso.proveedor or "Ingreso de inventario",
+            )
+        )
+        ingreso.turno_caja_id = turno.id
+        return
+
+    if existente:
+        turno = (
+            db.query(TurnoCaja)
+            .filter(TurnoCaja.id == existente.turno_caja_id)
+            .first()
+        )
+        if not turno or not turno.abierta:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "La caja donde se registró este ingreso ya está cerrada; "
+                    "no se puede cambiar la forma de pago. Registra el ajuste "
+                    "manualmente en la caja."
+                ),
+            )
+        db.delete(existente)
+
+    if fuente == FuentePagoIngreso.BALANCE:
+        ingreso.turno_caja_id = None
+    elif ingreso.turno_caja_id is None:
+        turno = _turno_abierto(db)
+        if not turno:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Debe abrir la caja para registrar el ingreso con fuente "
+                    "«Caja activa»."
+                ),
+            )
+        ingreso.turno_caja_id = turno.id
+
+
+def _aplicar_estado_pago(
+    ingreso: IngresoInventario, forma: FormaPagoIngreso, usuario_id: int
+):
+    """Ajusta el control de pago cuando cambia la forma de pago."""
+    if forma == FormaPagoIngreso.CREDITO:
+        ingreso.pagado = False
+        ingreso.fecha_pago = None
+        ingreso.pagado_por_id = None
+        ingreso.forma_pago_pago = None
+    elif forma == FormaPagoIngreso.DONACION:
+        ingreso.pagado = True
+        ingreso.fecha_pago = None
+        ingreso.pagado_por_id = None
+        ingreso.forma_pago_pago = None
+    else:
+        ingreso.pagado = True
+        ingreso.forma_pago_pago = _FORMA_CAJA[forma]
+        if ingreso.fecha_pago is None:
+            ingreso.fecha_pago = get_colombia_time()
+        ingreso.pagado_por_id = usuario_id
+
+
+def editar_ingreso(
+    db: Session, ingreso_id: int, datos: IngresoUpdate, usuario_id: int
+):
     ingreso = _obtener_o_404(db, ingreso_id)
+    if ingreso.anulada:
+        raise HTTPException(
+            status_code=400, detail="No se puede editar un ingreso anulado."
+        )
     if ingreso.forma_pago == FormaPagoIngreso.CREDITO and ingreso.pagado:
         raise HTTPException(
             status_code=400,
-            detail="No se puede editar un ingreso a crédito que ya fue pagado.",
+            detail=(
+                "No se puede editar un ingreso a crédito que ya fue pagado. "
+                "Anúlalo y regístralo de nuevo si necesitas corregirlo."
+            ),
         )
 
-    cambios = datos.model_dump(exclude_unset=True, exclude={"items"})
+    proporciono_forma = "forma_pago" in datos.model_fields_set
+    proporciono_fuente = "fuente_pago" in datos.model_fields_set
+    nueva_forma = datos.forma_pago if proporciono_forma else ingreso.forma_pago
+    nueva_fuente = datos.fuente_pago if proporciono_fuente else ingreso.fuente_pago
+    if nueva_forma is None:
+        raise HTTPException(status_code=400, detail="La forma de pago es obligatoria.")
+    if nueva_fuente is None:
+        raise HTTPException(status_code=400, detail="La fuente de pago es obligatoria.")
+
+    # Si cambia la fuente o la forma de pago, el movimiento de caja debe
+    # seguir representando el dinero que realmente salió (o dejó de salir).
+    if proporciono_forma or proporciono_fuente:
+        _sincronizar_caja_ingreso(db, ingreso, nueva_fuente, nueva_forma, usuario_id)
+        ingreso.fuente_pago = nueva_fuente
+    if proporciono_forma and nueva_forma != ingreso.forma_pago:
+        _aplicar_estado_pago(ingreso, nueva_forma, usuario_id)
+        ingreso.forma_pago = nueva_forma
+
+    cambios = datos.model_dump(exclude_unset=True, exclude={"items", "forma_pago", "fuente_pago"})
     # El proveedor se resuelve aparte: se puede enviar el id de uno existente o
     # solo el nombre (se crea si no existe).
     proporciono_proveedor = bool({"proveedor_id", "proveedor"} & datos.model_fields_set)
@@ -268,8 +499,47 @@ def editar_ingreso(db: Session, ingreso_id: int, datos: IngresoUpdate):
             if not item:
                 raise HTTPException(status_code=404, detail=f"La línea {linea.id} no pertenece a este ingreso.")
             if item.tipo != TipoItemIngreso.OTROS:
-                item.costo_unitario = linea.costo_unitario
-                item.valor = _valor_linea(item.tipo, item.cantidad, linea.costo_unitario)
+                factor = item.unidades_por_formato or 1
+                campos = linea.model_fields_set
+                costo = item.costo_unitario
+                if "costo_formato" in campos and linea.costo_formato is not None:
+                    if factor < 1:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "Las unidades por caja o paquete deben ser "
+                                "mayores a 0."
+                            ),
+                        )
+                    if linea.costo_formato < 0:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "El costo de la caja o paquete no puede ser "
+                                "negativo."
+                            ),
+                        )
+                    costo = round(linea.costo_formato / factor, 4)
+                    item.costo_formato = linea.costo_formato
+                elif "costo_unitario" in campos:
+                    costo = linea.costo_unitario
+                    # Mantiene coherente el costo del formato con el unitario
+                    # cuando la línea se compró por caja o paquete.
+                    if factor > 1 and costo is not None:
+                        item.costo_formato = round(costo * factor, 2)
+                    else:
+                        item.costo_formato = None
+                item.costo_unitario = costo
+                if (
+                    "costo_formato" in campos
+                    and linea.costo_formato is not None
+                    and item.cantidad_formatos is not None
+                ):
+                    item.valor = round(
+                        item.cantidad_formatos * linea.costo_formato, 2
+                    )
+                else:
+                    item.valor = _valor_linea(item.tipo, item.cantidad, costo)
 
     db.flush()
     db.refresh(ingreso)
@@ -301,6 +571,10 @@ def pagar_ingreso(
         raise HTTPException(
             status_code=400,
             detail="Solo las compras registradas como Crédito se pueden pagar.",
+        )
+    if ingreso.anulada:
+        raise HTTPException(
+            status_code=400, detail="No se puede pagar un ingreso anulado."
         )
     if ingreso.pagado:
         raise HTTPException(status_code=400, detail="Este ingreso ya está pagado.")
@@ -342,12 +616,128 @@ def pagar_ingreso(
 
 def resolver_ingreso(db: Session, ingreso_id: int, justificacion: str):
     ingreso = _obtener_o_404(db, ingreso_id)
+    if ingreso.anulada:
+        raise HTTPException(
+            status_code=400, detail="No se puede resolver un ingreso anulado."
+        )
     if ingreso.estado != EstadoIngreso.INCONSISTENTE:
         raise HTTPException(status_code=400, detail="Solo se pueden resolver los ingresos inconsistentes.")
     if not justificacion.strip():
         raise HTTPException(status_code=400, detail="Debes indicar una justificación.")
     ingreso.estado = EstadoIngreso.COMPLETO
     ingreso.justificacion = justificacion.strip()
+    db.commit()
+    db.refresh(ingreso)
+    return ingreso
+
+
+def anular_ingreso(db: Session, ingreso_id: int, motivo: str, usuario_id: int):
+    """Anula un ingreso y revierte sus efectos operativos.
+
+    El registro se conserva (no se borra) para auditoría. Se devuelve el stock
+    al proveedor y, si el ingreso había movido caja, se registra una entrada
+    por el mismo valor en el turno abierto. Si no hay caja abierta y hay dinero
+    que devolver, la operación se rechaza.
+    """
+    ingreso = (
+        db.query(IngresoInventario)
+        .filter(IngresoInventario.id == ingreso_id)
+        .with_for_update()
+        .first()
+    )
+    if not ingreso:
+        raise HTTPException(status_code=404, detail="Ingreso no encontrado")
+    if ingreso.anulada:
+        raise HTTPException(status_code=400, detail="Este ingreso ya está anulado.")
+
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise HTTPException(
+            status_code=400, detail="Debes indicar el motivo de la anulación."
+        )
+
+    # Se valida primero si hay dinero que devolver y si existe una caja
+    # abierta, para no revertir stock y luego fallar a mitad de camino.
+    movimientos = (
+        db.query(RegistroCaja)
+        .filter(
+            RegistroCaja.referencia.in_(
+                [f"Ingreso #{ingreso.id}", f"Pago ingreso #{ingreso.id}"]
+            ),
+            RegistroCaja.tipo == TipoMovimientoCaja.SALIDA,
+        )
+        .all()
+    )
+    turno_devolucion = None
+    if movimientos:
+        turno_devolucion = _turno_abierto(db)
+        if not turno_devolucion:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No hay una caja abierta para devolver el dinero de este "
+                    "ingreso. Abre la caja y vuelve a intentarlo."
+                ),
+            )
+
+    # 1. Revertir el stock que entró con la compra.
+    for item in ingreso.items:
+        if not item.producto_id or not item.cantidad:
+            continue
+        producto = (
+            db.query(Producto)
+            .filter(Producto.id == item.producto_id)
+            .with_for_update()
+            .first()
+        )
+        if not producto:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No se encontró el producto #{item.producto_id} para revertir el stock.",
+            )
+        disponible = producto.stock or 0
+        if disponible < item.cantidad:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No se puede anular: el producto «{producto.nombre}» ya no "
+                    f"tiene stock suficiente (disponible {disponible}, comprado "
+                    f"{item.cantidad}). Ajusta el inventario primero."
+                ),
+            )
+        producto.stock = disponible - item.cantidad
+        db.add(
+            Kardex(
+                producto_id=producto.id,
+                usuario_id=usuario_id,
+                tipo_movimiento=TipoMovimientoInventario.SALIDA_ANULACION,
+                cantidad=item.cantidad,
+                saldo_stock=producto.stock,
+                referencia=f"Anulación Ingreso #{ingreso.id}",
+            )
+        )
+
+    # 2. Devolver el dinero que había salido de la caja (compra de contado o
+    # pago posterior de una compra a crédito).
+    for movimiento in movimientos:
+        db.add(
+            RegistroCaja(
+                turno_caja_id=turno_devolucion.id,
+                usuario_id=usuario_id,
+                tipo=TipoMovimientoCaja.ENTRADA,
+                referencia=f"Anulación Ingreso #{ingreso.id}",
+                forma_pago=movimiento.forma_pago,
+                monto=movimiento.monto,
+                categoria=CATEGORIA_DEVOLUCION,
+                observacion=f"{motivo} · {movimiento.referencia}",
+            )
+        )
+
+    ingreso.anulada = True
+    ingreso.motivo_anulacion = motivo
+    ingreso.fecha_anulacion = get_colombia_time()
+    ingreso.anulada_por_id = usuario_id
+
     db.commit()
     db.refresh(ingreso)
     return ingreso

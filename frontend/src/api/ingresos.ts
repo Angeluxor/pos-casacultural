@@ -27,6 +27,9 @@ export type IngresoItem = {
   producto_id: number | null
   concepto: string | null
   cantidad: number | null
+  cantidad_formatos: number | null
+  unidades_por_formato: number | null
+  costo_formato: number | null
   costo_unitario: number | null
   valor: number | null
 }
@@ -36,6 +39,9 @@ export type IngresoItemCreate = {
   producto_id?: number
   concepto?: string
   cantidad?: number
+  cantidad_formatos?: number
+  unidades_por_formato?: number
+  costo_formato?: number
   costo_unitario?: number
   valor?: number
   precio?: number
@@ -61,6 +67,11 @@ export type Ingreso = {
   pagado_por_id: number | null
   pagado_por_nombre: string | null
   forma_pago_pago: FormaPago | null
+  anulada: boolean
+  motivo_anulacion: string | null
+  fecha_anulacion: string | null
+  anulada_por_id: number | null
+  anulada_por_nombre: string | null
   items: IngresoItem[]
 }
 
@@ -79,11 +90,14 @@ export type IngresoCreate = {
 export type IngresoItemUpdate = {
   id: number
   costo_unitario?: number
+  costo_formato?: number
 }
 
 export type IngresoUpdate = {
   proveedor_id?: number | null
   proveedor?: string
+  fuente_pago?: FuentePagoIngreso
+  forma_pago?: FormaPagoIngreso
   observacion?: string
   items?: IngresoItemUpdate[]
 }
@@ -127,4 +141,8 @@ export function pagarIngreso(
 
 export function resolverIngreso(id: number, justificacion: string): Promise<Ingreso> {
   return apiJson<Ingreso>(`/api/ingresos/${id}/resolver`, 'POST', { justificacion })
+}
+
+export function anularIngreso(id: number, motivo: string): Promise<Ingreso> {
+  return apiJson<Ingreso>(`/api/ingresos/${id}/anular`, 'POST', { motivo })
 }

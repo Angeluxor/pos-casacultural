@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  anularIngreso,
   crearIngreso,
   editarIngreso,
   obtenerIngreso,
@@ -15,6 +16,7 @@ import {
   type FuentePagoIngreso,
   type Ingreso,
   type IngresoCreate,
+  type IngresoItem,
   type TipoItemIngreso,
 } from '../api/ingresos'
 import { listarProductos, type Producto } from '../api/productos'
@@ -50,6 +52,7 @@ export function Ingresos() {
   const { tienePermiso } = useAuth()
   const puedeCrear = tienePermiso('ingresos.crear')
   const puedePagar = tienePermiso('ingresos.pagar')
+  const puedeAnular = tienePermiso('ingresos.anular')
   const [params, setParams] = useSearchParams()
 
   const { orden, direccion, alternar } = useOrdenServidor()
@@ -110,7 +113,7 @@ export function Ingresos() {
 
       <AyudaContextual
         titulo="Qué registra esta pantalla"
-        detalle="Registra la entrada de mercancía al inventario con proveedor, ítems y forma de pago. «Caja activa» mueve efectivo o banco; «Balance general» no mueve la caja. Crédito queda como cuenta por pagar y se paga después desde aquí."
+        detalle="Registra la entrada de mercancía al inventario con proveedor, ítems y forma de pago. «Caja activa» mueve efectivo o banco; «Balance general» no mueve la caja. Crédito queda como cuenta por pagar y se paga después desde aquí. Si te equivocas, abre el ingreso para corregir la fuente o la forma de pago, o anúlalo para revertir stock y caja."
       />
 
       {error && <p className="error">{error}</p>}
@@ -193,7 +196,13 @@ export function Ingresos() {
                       {moneda.format(ing.suma_items)}
                     </td>
                     <td data-label="Estado">
-                      <span className={CLASE_ESTADO[ing.estado] ?? 'badge'}>{ing.estado}</span>
+                      {ing.anulada ? (
+                        <span className="badge badge--off">Anulada</span>
+                      ) : (
+                        <span className={CLASE_ESTADO[ing.estado] ?? 'badge'}>
+                          {ing.estado}
+                        </span>
+                      )}
                     </td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
@@ -229,10 +238,12 @@ export function Ingresos() {
 
       {detalle && (
         <DetalleIngreso
+          key={detalle.id}
           ingreso={detalle}
           puedeResolver={tienePermiso('ingresos.resolver')}
           puedeEditar={tienePermiso('ingresos.editar')}
           puedePagar={puedePagar}
+          puedeAnular={puedeAnular}
           onCerrar={() => setDetalle(null)}
           onActualizado={(ing) => {
             setDetalle(ing)
@@ -251,6 +262,7 @@ type Linea = {
   concepto: string
   precio: string
   cantidad: string
+  unidades: string
   costo: string
   valor: string
 }
@@ -265,6 +277,7 @@ function nuevaLinea(tipo: TipoItemIngreso = 'Producto'): Linea {
     concepto: '',
     precio: '',
     cantidad: '1',
+    unidades: '1',
     costo: '',
     valor: '',
   }
@@ -315,29 +328,52 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
           return
         }
         items.push({ tipo: l.tipo, concepto: l.concepto.trim(), valor: Number(l.valor) })
-      } else if (l.tipo === 'Producto') {
-        if (!l.productoId || !l.cantidad) {
+      } else {
+        const formatos = Number(l.cantidad)
+        const factor = Number(l.unidades) || 1
+        if (!Number.isInteger(formatos) || formatos <= 0) {
+          setError('La cantidad de cada producto debe ser un número entero mayor a 0.')
+          return
+        }
+        if (!Number.isInteger(factor) || factor <= 0) {
+          setError('Las unidades por caja o paquete deben ser un número entero mayor a 0.')
+          return
+        }
+        if (l.tipo === 'Producto' && !l.productoId) {
           setError('Elige el producto y la cantidad de cada línea.')
           return
         }
-        items.push({
-          tipo: l.tipo,
-          producto_id: Number(l.productoId),
-          cantidad: Number(l.cantidad),
-          costo_unitario: l.costo ? Number(l.costo) : undefined,
-        })
-      } else {
-        if (!l.concepto.trim() || !l.precio || !l.cantidad) {
+        if (l.tipo === 'Producto nuevo' && (!l.concepto.trim() || !l.precio)) {
           setError('Completa nombre, precio y cantidad del producto nuevo.')
           return
         }
-        items.push({
+
+        const costo = l.costo ? Number(l.costo) : undefined
+        // El costo que se digita es el de la caja/paquete cuando el formato
+        // tiene más de una unidad. El unitario se calcula automáticamente.
+        const costoUnitario =
+          costo === undefined
+            ? undefined
+            : factor > 1
+              ? Number((costo / factor).toFixed(4))
+              : costo
+        const conFormato = factor > 1
+        const item = {
           tipo: l.tipo,
-          concepto: l.concepto.trim(),
-          precio: Number(l.precio),
-          cantidad: Number(l.cantidad),
-          costo_unitario: l.costo ? Number(l.costo) : undefined,
-        })
+          producto_id: l.tipo === 'Producto' ? Number(l.productoId) : undefined,
+          concepto: l.tipo === 'Producto nuevo' ? l.concepto.trim() : undefined,
+          precio: l.tipo === 'Producto nuevo' ? Number(l.precio) : undefined,
+          cantidad: formatos * factor,
+          ...(conFormato
+            ? {
+                cantidad_formatos: formatos,
+                unidades_por_formato: factor,
+                costo_formato: costo,
+              }
+            : {}),
+          costo_unitario: costoUnitario,
+        }
+        items.push(item)
       }
     }
     if (items.length === 0) {
@@ -425,120 +461,145 @@ function FormNuevo({ onCerrar, onCreado }: { onCerrar: () => void; onCreado: () 
 
         <h3>Ítems</h3>
         <ul className="lista-simple">
-          {lineas.map((l) => (
-            <li key={l.key} style={{ display: 'block' }}>
-              <div className="fila-campos">
-                <label>
-                  Tipo
-                  <select
-                    value={l.tipo}
-                    onChange={(e) => actualizar(l.key, { tipo: e.target.value as TipoItemIngreso })}
-                  >
-                    {TIPOS_ITEM_INGRESO.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {l.tipo === 'Producto' && (
+          {lineas.map((l) => {
+            const factor = Math.max(1, Math.round(Number(l.unidades) || 1))
+            const cantidadTotal = Math.max(0, Number(l.cantidad) || 0) * factor
+            const costoNum = l.costo ? Number(l.costo) : 0
+            const costoUnitario = factor > 1 ? costoNum / factor : costoNum
+            const subtotal = cantidadTotal * costoUnitario
+            return (
+              <li key={l.key} style={{ display: 'block' }}>
+                <div className="fila-campos">
                   <label>
-                    Producto
+                    Tipo
                     <select
-                      value={l.productoId}
-                      onChange={(e) => actualizar(l.key, { productoId: e.target.value })}
+                      value={l.tipo}
+                      onChange={(e) => actualizar(l.key, { tipo: e.target.value as TipoItemIngreso })}
                     >
-                      <option value="">Elige…</option>
-                      {productos.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.codigo} · {p.nombre}
+                      {TIPOS_ITEM_INGRESO.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
                         </option>
                       ))}
                     </select>
                   </label>
-                )}
 
-                {l.tipo === 'Producto nuevo' && (
-                  <>
+                  {l.tipo === 'Producto' && (
                     <label>
-                      Nombre
-                      <input
-                        value={l.concepto}
-                        onChange={(e) => actualizar(l.key, { concepto: e.target.value })}
-                      />
+                      Producto
+                      <select
+                        value={l.productoId}
+                        onChange={(e) => actualizar(l.key, { productoId: e.target.value })}
+                      >
+                        <option value="">Elige…</option>
+                        {productos.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.codigo} · {p.nombre}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                    <label>
-                      Precio de venta
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={l.precio}
-                        onChange={(e) => actualizar(l.key, { precio: e.target.value })}
-                      />
-                    </label>
-                  </>
-                )}
+                  )}
 
-                {l.tipo === 'Otros' ? (
-                  <>
-                    <label>
-                      Concepto
-                      <input
-                        value={l.concepto}
-                        onChange={(e) => actualizar(l.key, { concepto: e.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Valor
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={l.valor}
-                        onChange={(e) => actualizar(l.key, { valor: e.target.value })}
-                      />
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label>
-                      Cantidad
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={l.cantidad}
-                        onChange={(e) => actualizar(l.key, { cantidad: e.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Costo unitario
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={l.costo}
-                        placeholder="Opcional"
-                        onChange={(e) => actualizar(l.key, { costo: e.target.value })}
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-              <div className="acciones">
-                <button
-                  type="button"
-                  className="boton boton--mini boton--danger"
-                  onClick={() => quitar(l.key)}
-                  disabled={lineas.length === 1}
-                >
-                  Quitar
-                </button>
-              </div>
-            </li>
-          ))}
+                  {l.tipo === 'Producto nuevo' && (
+                    <>
+                      <label>
+                        Nombre
+                        <input
+                          value={l.concepto}
+                          onChange={(e) => actualizar(l.key, { concepto: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Precio de venta
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={l.precio}
+                          onChange={(e) => actualizar(l.key, { precio: e.target.value })}
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {l.tipo === 'Otros' ? (
+                    <>
+                      <label>
+                        Concepto
+                        <input
+                          value={l.concepto}
+                          onChange={(e) => actualizar(l.key, { concepto: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Valor
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={l.valor}
+                          onChange={(e) => actualizar(l.key, { valor: e.target.value })}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label>
+                        {factor > 1 ? 'Cantidad de cajas/paquetes' : 'Cantidad'}
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={l.cantidad}
+                          onChange={(e) => actualizar(l.key, { cantidad: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Unidades por caja/paquete
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={l.unidades}
+                          onChange={(e) => actualizar(l.key, { unidades: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        {factor > 1 ? 'Costo por caja/paquete' : 'Costo unitario'}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={l.costo}
+                          placeholder="Opcional"
+                          onChange={(e) => actualizar(l.key, { costo: e.target.value })}
+                        />
+                      </label>
+                      {factor > 1 && (
+                        <p className="ayuda" style={{ gridColumn: '1 / -1' }}>
+                          {l.cantidad || 0} × {factor} = {cantidadTotal} unidades
+                          {costoNum > 0
+                            ? ` · unitario ${moneda.format(costoUnitario)} · total ${moneda.format(subtotal)}`
+                            : ' · escribe el costo de la caja para calcular el unitario'}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="acciones">
+                  <button
+                    type="button"
+                    className="boton boton--mini boton--danger"
+                    onClick={() => quitar(l.key)}
+                    disabled={lineas.length === 1}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              </li>
+            )
+          })}
         </ul>
 
         <div className="acciones">
@@ -563,6 +624,7 @@ function DetalleIngreso({
   puedeResolver,
   puedeEditar,
   puedePagar,
+  puedeAnular,
   onCerrar,
   onActualizado,
 }: {
@@ -570,21 +632,50 @@ function DetalleIngreso({
   puedeResolver: boolean
   puedeEditar: boolean
   puedePagar: boolean
+  puedeAnular: boolean
   onCerrar: () => void
   onActualizado: (ing: Ingreso) => void
 }) {
   const [proveedorId, setProveedorId] = useState<number | null>(ingreso.proveedor_id)
+  const [fuentePago, setFuentePago] = useState<FuentePagoIngreso>(ingreso.fuente_pago)
+  const [formaPago, setFormaPago] = useState<FormaPagoIngreso>(ingreso.forma_pago)
   const [costos, setCostos] = useState<Record<number, string>>(() =>
     Object.fromEntries(
       ingreso.items.map((i) => [i.id, i.costo_unitario != null ? String(i.costo_unitario) : '']),
     ),
   )
+  const [costosFormato, setCostosFormato] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      ingreso.items.map((i) => [
+        i.id,
+        i.costo_formato != null
+          ? String(i.costo_formato)
+          : i.costo_unitario != null && (i.unidades_por_formato ?? 1) > 1
+            ? String(Number((i.costo_unitario * (i.unidades_por_formato ?? 1)).toFixed(2)))
+            : '',
+      ]),
+    ),
+  )
   const [justificacion, setJustificacion] = useState('')
   const [formaPagoPago, setFormaPagoPago] = useState<FormaPagoCredito>('Efectivo')
+  const [motivoAnular, setMotivoAnular] = useState('')
+  const [mostrandoAnular, setMostrandoAnular] = useState(false)
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [pagando, setPagando] = useState(false)
-  const editable = puedeEditar && !(ingreso.forma_pago === 'Crédito' && ingreso.pagado)
+  const [anulando, setAnulando] = useState(false)
+  const editable =
+    puedeEditar &&
+    !ingreso.anulada &&
+    !(ingreso.forma_pago === 'Crédito' && ingreso.pagado)
+
+  function costoUnitarioLinea(item: IngresoItem): number | null {
+    const factor = item.unidades_por_formato ?? 1
+    const valor =
+      factor > 1 ? Number(costosFormato[item.id]) : Number(costos[item.id])
+    if (!Number.isFinite(valor) || valor <= 0) return null
+    return factor > 1 ? valor / factor : valor
+  }
 
   async function guardar() {
     setError('')
@@ -592,12 +683,23 @@ function DetalleIngreso({
     try {
       const items = ingreso.items
         .filter((i) => i.tipo !== 'Otros')
-        .map((i) => ({
-          id: i.id,
-          costo_unitario: costos[i.id] ? Number(costos[i.id]) : undefined,
-        }))
+        .map((i) =>
+          (i.unidades_por_formato ?? 1) > 1
+            ? {
+                id: i.id,
+                costo_formato: costosFormato[i.id]
+                  ? Number(costosFormato[i.id])
+                  : undefined,
+              }
+            : {
+                id: i.id,
+                costo_unitario: costos[i.id] ? Number(costos[i.id]) : undefined,
+              },
+        )
       const actualizado = await editarIngreso(ingreso.id, {
         proveedor_id: proveedorId,
+        ...(fuentePago !== ingreso.fuente_pago ? { fuente_pago: fuentePago } : {}),
+        ...(formaPago !== ingreso.forma_pago ? { forma_pago: formaPago } : {}),
         items,
       })
       onActualizado(actualizado)
@@ -605,6 +707,25 @@ function DetalleIngreso({
       setError(err instanceof Error ? err.message : 'Error al guardar')
     } finally {
       setGuardando(false)
+    }
+  }
+
+  async function anular() {
+    if (!motivoAnular.trim()) {
+      setError('Escribe el motivo de la anulación.')
+      return
+    }
+    setError('')
+    setAnulando(true)
+    try {
+      const actualizado = await anularIngreso(ingreso.id, motivoAnular.trim())
+      onActualizado(actualizado)
+      setMostrandoAnular(false)
+      setMotivoAnular('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al anular el ingreso')
+    } finally {
+      setAnulando(false)
     }
   }
 
@@ -643,14 +764,30 @@ function DetalleIngreso({
       <div className="modal modal--ancho" onClick={(e) => e.stopPropagation()}>
         <h2>
           Ingreso #{ingreso.id}{' '}
-          <span className={CLASE_ESTADO[ingreso.estado] ?? 'badge'}>{ingreso.estado}</span>
+          {ingreso.anulada ? (
+            <span className="badge badge--off">Anulada</span>
+          ) : (
+            <span className={CLASE_ESTADO[ingreso.estado] ?? 'badge'}>
+              {ingreso.estado}
+            </span>
+          )}
         </h2>
         <p className="ayuda">
           {formatoFecha(ingreso.fecha)} · Fuente: {ingreso.fuente_pago} · {ingreso.forma_pago} ·
           Total {moneda.format(ingreso.total)} · Suma ítems {moneda.format(ingreso.suma_items)} ·
           Pago: {ingreso.estado_pago}
         </p>
-        {ingreso.fuente_pago === 'Balance general' && (
+        {ingreso.anulada && (
+          <p className="ayuda">
+            Anulado{ingreso.fecha_anulacion
+              ? ` el ${formatoFecha(ingreso.fecha_anulacion)}`
+              : ''}
+            {ingreso.anulada_por_nombre ? ` por ${ingreso.anulada_por_nombre}` : ''}. Motivo:{' '}
+            {ingreso.motivo_anulacion ?? '—'}. El stock y el dinero se revirtieron; el registro se
+            conserva para auditoría.
+          </p>
+        )}
+        {ingreso.fuente_pago === 'Balance general' && !ingreso.anulada && (
           <p className="ayuda">
             {ingreso.forma_pago === 'Crédito'
               ? 'Registrado en balance general como cuenta por pagar. Al pagarlo, el total sale de la caja abierta.'
@@ -664,7 +801,7 @@ function DetalleIngreso({
         )}
         {error && <p className="error">{error}</p>}
 
-        {ingreso.forma_pago === 'Crédito' && (
+        {ingreso.forma_pago === 'Crédito' && !ingreso.anulada && (
           <div className="panel" style={{ marginTop: 16 }}>
             <h3>Pago de la compra</h3>
             {ingreso.pagado ? (
@@ -712,11 +849,47 @@ function DetalleIngreso({
           </div>
         )}
 
-        <SelectorProveedor
-          value={proveedorId}
-          onChange={setProveedorId}
-          disabled={!editable}
-        />
+        <div className="fila-campos">
+          <SelectorProveedor
+            value={proveedorId}
+            onChange={setProveedorId}
+            disabled={!editable}
+          />
+          <label>
+            Fuente de pago
+            <select
+              value={fuentePago}
+              disabled={!editable}
+              onChange={(e) => setFuentePago(e.target.value as FuentePagoIngreso)}
+            >
+              {FUENTES_PAGO_INGRESO.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Forma de pago
+            <select
+              value={formaPago}
+              disabled={!editable}
+              onChange={(e) => setFormaPago(e.target.value as FormaPagoIngreso)}
+            >
+              {FORMAS_PAGO_INGRESO.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {editable && (fuentePago !== ingreso.fuente_pago || formaPago !== ingreso.forma_pago) && (
+          <p className="ayuda">
+            Al guardar se ajustará el movimiento de caja y el estado de pago según la nueva
+            fuente y forma de pago.
+          </p>
+        )}
 
         <div className="tabla-wrap tabla-wrap--cards">
           <table className="tabla tabla--cards">
@@ -725,7 +898,7 @@ function DetalleIngreso({
                 <th>Tipo</th>
                 <th>Detalle</th>
                 <th className="derecha">Cantidad</th>
-                <th className="derecha">Costo unitario</th>
+                <th className="derecha">Costo</th>
                 <th className="derecha">Valor</th>
               </tr>
             </thead>
@@ -736,10 +909,36 @@ function DetalleIngreso({
                   <td data-label="Detalle">{i.concepto ?? `Producto #${i.producto_id ?? '—'}`}</td>
                   <td data-label="Cantidad" className="derecha">
                     {i.cantidad ?? '—'}
+                    {(i.unidades_por_formato ?? 1) > 1 && (
+                      <div className="ayuda">
+                        {i.cantidad_formatos != null
+                          ? `${i.cantidad_formatos} × ${i.unidades_por_formato}`
+                          : `${i.unidades_por_formato} u. por formato`}
+                      </div>
+                    )}
                   </td>
-                  <td data-label="Costo unitario" className="derecha">
+                  <td data-label="Costo" className="derecha">
                     {i.tipo === 'Otros' ? (
                       '—'
+                    ) : (i.unidades_por_formato ?? 1) > 1 ? (
+                      <>
+                        <input
+                          className="input-mini"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={costosFormato[i.id] ?? ''}
+                          disabled={!editable}
+                          onChange={(e) =>
+                            setCostosFormato((c) => ({ ...c, [i.id]: e.target.value }))
+                          }
+                        />
+                        <div className="ayuda">
+                          {costoUnitarioLinea(i) != null
+                            ? `${moneda.format(costoUnitarioLinea(i)!)} c/u`
+                            : 'Costo de la caja/paquete'}
+                        </div>
+                      </>
                     ) : (
                       <input
                         className="input-mini"
@@ -787,6 +986,60 @@ function DetalleIngreso({
                 Marcar como completo
               </button>
             </div>
+          </div>
+        )}
+
+        {!ingreso.anulada && puedeAnular && (
+          <div className="panel-anular">
+            {mostrandoAnular ? (
+              <>
+                <p className="ayuda">
+                  Anular revierte el stock y, si hubo dinero, registra la devolución en la caja
+                  abierta. El ingreso queda visible para auditoría y no se puede volver a usar.
+                </p>
+                <label>
+                  Motivo de la anulación
+                  <input
+                    value={motivoAnular}
+                    onChange={(e) => setMotivoAnular(e.target.value)}
+                    placeholder="Ej. error en el proveedor o en el monto"
+                    autoFocus
+                  />
+                </label>
+                <div className="acciones">
+                  <button
+                    type="button"
+                    className="boton boton--danger"
+                    onClick={() => void anular()}
+                    disabled={anulando || !motivoAnular.trim()}
+                  >
+                    {anulando ? 'Anulando…' : 'Confirmar anulación'}
+                  </button>
+                  <button
+                    type="button"
+                    className="boton boton--secundario"
+                    onClick={() => {
+                      setMostrandoAnular(false)
+                      setMotivoAnular('')
+                    }}
+                    disabled={anulando}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="acciones">
+                <button
+                  type="button"
+                  className="boton boton--danger"
+                  onClick={() => setMostrandoAnular(true)}
+                  disabled={guardando || pagando}
+                >
+                  Anular ingreso
+                </button>
+              </div>
+            )}
           </div>
         )}
 
