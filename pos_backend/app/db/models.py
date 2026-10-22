@@ -295,6 +295,9 @@ class Factura(Base):
     # Nombre temporal/eventual que da el cajero cuando el cliente no se
     # registra (solo texto; no crea un cliente real).
     nombre_eventual = Column(String, nullable=True)
+    # Clave enviada por el cliente (cabecera ``Idempotency-Key``) para que un
+    # reintento después de un timeout no cree una venta duplicada.
+    clave_idempotencia = Column(String(64), unique=True, index=True, nullable=True)
 
     # Trazabilidad de anulación
     motivo_anulacion = Column(String, nullable=True)
@@ -349,6 +352,29 @@ class Pago(Base):
     factura = relationship("Factura", back_populates="pagos")
     cajero = relationship("Usuario")
     descuento_nomina = relationship("DescuentoNomina", back_populates="pagos")
+
+
+class PagoIdempotente(Base):
+    """Registro de una solicitud de cobro ya procesada.
+
+    Un cobro puede incluir varios medios de pago, por eso la clave no vive en
+    ``pagos`` (tendría que repetirse). Esta fila hace de candado único: si el
+    navegador reintenta tras un timeout, se devuelve la factura sin volver a
+    insertar los pagos ni los movimientos de caja.
+    """
+
+    __tablename__ = "pagos_idempotentes"
+
+    id = Column(Integer, primary_key=True)
+    clave = Column(String(64), unique=True, index=True, nullable=False)
+    factura_id = Column(
+        Integer, ForeignKey("facturas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    creado_en = Column(
+        DateTime(timezone=True), default=get_colombia_time, nullable=False
+    )
+
+    factura = relationship("Factura")
 
 
 class DescuentoNomina(Base):

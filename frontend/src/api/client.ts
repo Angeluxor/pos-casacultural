@@ -17,56 +17,108 @@ const TOKEN_KEY = 'pos_token'
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  timeout: boolean
+  constructor(status: number, message: string, timeout = false) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.timeout = timeout
   }
 }
+
+export type ApiOpciones = RequestInit & {
+  /** Tiempo máximo de espera. 0 desactiva el límite. */
+  timeoutMs?: number
+}
+
+// Sin límite, un fetch con la red móvil caída o un cold start de Render puede
+// dejar la UI en "Guardando…" indefinidamente.
+const TIEMPO_MAXIMO_MS = 30_000
 
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
 export const setToken = (token: string): void => localStorage.setItem(TOKEN_KEY, token)
 export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY)
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers)
+export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Promise<T> {
+  const { timeoutMs = TIEMPO_MAXIMO_MS, signal: signalExterno, ...init } = options
+  const headers = new Headers(init.headers)
   const token = getToken()
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  let res: Response
-  try {
-    res = await fetch(`${API_URL}${path}`, { ...options, headers })
-  } catch {
-    throw new ApiError(0, 'No se pudo conectar con el servidor')
+  const controller = new AbortController()
+  if (signalExterno) {
+    if (signalExterno.aborted) controller.abort()
+    else signalExterno.addEventListener('abort', () => controller.abort(), { once: true })
   }
+  const timer =
+    timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
 
-  if (res.status === 401) {
-    clearToken()
-    let detalle = 'Sesión no válida o expirada'
-    if (path.includes('/auth/login')) {
+  try {
+    let res: Response
+    try {
+      res = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers,
+        signal: controller.signal,
+      })
+    } catch {
+      if (controller.signal.aborted) {
+        if (signalExterno?.aborted) {
+          throw new ApiError(0, 'La operación fue cancelada')
+        }
+        throw new ApiError(
+          0,
+          'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',
+          true,
+        )
+      }
+      throw new ApiError(0, 'No se pudo conectar con el servidor')
+    }
+
+    if (res.status === 401) {
+      clearToken()
+      let detalle = 'Sesión no válida o expirada'
+      if (path.includes('/auth/login')) {
+        try {
+          const data = await res.json()
+          if (typeof data.detail === 'string' && data.detail) detalle = data.detail
+        } catch {
+          /* respuesta sin JSON */
+        }
+      }
+      throw new ApiError(401, detalle)
+    }
+    if (!res.ok) {
+      let detalle = `Error ${res.status}`
       try {
         const data = await res.json()
-        if (typeof data.detail === 'string' && data.detail) detalle = data.detail
+        if (typeof data.detail === 'string') detalle = data.detail
       } catch {
         /* respuesta sin JSON */
       }
+      throw new ApiError(res.status, detalle)
     }
-    throw new ApiError(401, detalle)
-  }
-  if (!res.ok) {
-    let detalle = `Error ${res.status}`
-    try {
-      const data = await res.json()
-      if (typeof data.detail === 'string') detalle = data.detail
-    } catch {
-      /* respuesta sin JSON */
+    if (res.status === 204) return undefined as T
+    return (await res.json()) as T
+  } catch (err) {
+    // El límite también cubre la lectura del cuerpo: una respuesta puede
+    // llegar con cabeceras y quedarse colgada a mitad de la descarga.
+    if (controller.signal.aborted && !(err instanceof ApiError)) {
+      if (signalExterno?.aborted) {
+        throw new ApiError(0, 'La operación fue cancelada')
+      }
+      throw new ApiError(
+        0,
+        'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',
+        true,
+      )
     }
-    throw new ApiError(res.status, detalle)
+    throw err
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
 }
 
 export async function apiBlob(path: string): Promise<Blob> {
@@ -97,10 +149,20 @@ export async function apiBlob(path: string): Promise<Blob> {
   return res.blob()
 }
 
-export async function apiJson<T>(path: string, method: string, cuerpo: unknown): Promise<T> {
+export async function apiJson<T>(
+  path: string,
+  method: string,
+  cuerpo: unknown,
+  options: Omit<ApiOpciones, 'method' | 'body'> = {},
+): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   return apiFetch<T>(path, {
+    ...options,
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(cuerpo),
   })
 }

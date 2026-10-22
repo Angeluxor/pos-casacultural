@@ -20,7 +20,9 @@ import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { Stepper } from '../components/Stepper'
 import { ThOrdenable } from '../components/ThOrdenable'
+import { ApiError } from '../api/client'
 import { formatoFecha, moneda } from '../lib/formato'
+import { crearClaveIdempotencia } from '../lib/idempotencia'
 import { confirmarCierre } from '../lib/modal'
 import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
@@ -394,6 +396,37 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function errorReintentable(err: unknown): boolean {
+  // 0 = red caída o timeout; 503 = la base de datos no respondió a tiempo.
+  // Ambos son seguros de reintentar porque la clave de idempotencia evita
+  // duplicar la operación si el primer intento sí alcanzó a guardarse.
+  return err instanceof ApiError && (err.status === 0 || err.status === 503)
+}
+
+/**
+ * Envía un cobro con un reintento seguro.
+ *
+ * Si la primera petición alcanzó a guardarse pero la respuesta se perdió, el
+ * reintento usa la misma clave y el backend devuelve la factura ya cobrada en
+ * vez de insertar los pagos y los movimientos de caja otra vez.
+ */
+async function registrarPagoConReintento(
+  facturaId: number,
+  pagos: { valor: number; forma_pago: FormaPago }[],
+  claveIdempotencia: string,
+): Promise<Factura> {
+  const enviar = () =>
+    pagarFactura(facturaId, pagos, { claveIdempotencia, timeoutMs: 30_000 })
+  try {
+    return await enviar()
+  } catch (err) {
+    if (errorReintentable(err)) {
+      return enviar()
+    }
+    throw err
+  }
+}
+
 type LineaPago = { forma_pago: FormaPago; valor: string }
 
 function MediosPago({
@@ -507,6 +540,13 @@ function FormVenta({
   const [pagos, setPagos] = useState<LineaPago[]>([])
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Se conserva durante toda la vida del formulario para que un reintento
+  // después de un timeout recupere la venta en vez de duplicarla.
+  const [claveIdempotencia] = useState(() =>
+    crearClaveIdempotencia(),
+  )
+  // Clave propia del cobro: un timeout no puede duplicar el abono.
+  const [clavePago] = useState(() => crearClaveIdempotencia())
 
   const total = useMemo(
     () => items.reduce((acc, i) => acc + i.producto.precio * i.cantidad, 0),
@@ -600,27 +640,63 @@ function FormVenta({
       }
     }
     setGuardando(true)
+    const datos = {
+      cliente_id: cliente ? cliente.id : null,
+      nombre_eventual: cliente ? null : nombreEventual.trim() || null,
+      detalles: items.map((i) => ({ producto_id: i.producto.id, cantidad: i.cantidad })),
+    }
     try {
-      const factura = await crearFactura({
-        cliente_id: cliente ? cliente.id : null,
-        nombre_eventual: cliente ? null : nombreEventual.trim() || null,
-        detalles: items.map((i) => ({ producto_id: i.producto.id, cantidad: i.cantidad })),
-      })
-      if (cobrarAhora) {
+      let factura: Factura
+      try {
+        factura = await crearFactura(datos, {
+          claveIdempotencia,
+          timeoutMs: 30_000,
+        })
+      } catch (err) {
+        // Un timeout o una caída de red es ambiguo: el servidor pudo guardar
+        // la venta. Reintentamos una vez con la misma clave; si ya existe, el
+        // backend devuelve la factura original sin descontar stock otra vez.
+        if (errorReintentable(err)) {
+          factura = await crearFactura(datos, {
+            claveIdempotencia,
+            timeoutMs: 30_000,
+          })
+        } else {
+          throw err
+        }
+      }
+      if (
+        cobrarAhora &&
+        factura.saldo > 0 &&
+        !['Pagada', 'Anulada', 'Crédito'].includes(factura.estado)
+      ) {
         try {
-          await pagarFactura(
+          await registrarPagoConReintento(
             factura.id,
             pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
+            clavePago,
           )
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'error desconocido'
-          onGuardado(`Venta #${factura.id} registrada, pero el cobro falló: ${msg}`)
+          const motivo =
+            err instanceof ApiError && err.timeout
+              ? 'la conexión tardó demasiado y no se confirmó el cobro'
+              : `el cobro falló: ${msg}`
+          onGuardado(
+            `Venta #${factura.id} registrada, pero ${motivo}. Revisa la factura en la lista antes de reintentar el cobro: puede que ya esté registrado.`,
+          )
           return
         }
       }
       onGuardado()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al registrar la venta')
+      if (err instanceof ApiError && err.timeout) {
+        setError(
+          'No pudimos confirmar la venta por un problema de conexión. Antes de volver a registrarla, revisa la lista de ventas: puede que ya esté guardada.',
+        )
+      } else {
+        setError(err instanceof Error ? err.message : 'Error al registrar la venta')
+      }
     } finally {
       setGuardando(false)
     }
@@ -924,6 +1000,9 @@ function FormCobro({
   const [buscar, setBuscar] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  // Se conserva mientras el formulario esté abierto: si el cobro se guardó
+  // pero la respuesta se perdió, el reintento devuelve la misma factura.
+  const [clavePago] = useState(() => crearClaveIdempotencia())
   const [ocupado, setOcupado] = useState(false)
   const [anulando, setAnulando] = useState(false)
   const [mostrandoAnular, setMostrandoAnular] = useState(false)
@@ -1016,13 +1095,20 @@ function FormCobro({
     }
     setGuardando(true)
     try {
-      await pagarFactura(
+      await registrarPagoConReintento(
         f.id,
         pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
+        clavePago,
       )
       onGuardado()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al registrar el pago')
+      if (err instanceof ApiError && err.timeout) {
+        setError(
+          'No pudimos confirmar el pago por un problema de conexión. Revisa la factura en la lista antes de reintentar: puede que ya esté registrado.',
+        )
+      } else {
+        setError(err instanceof Error ? err.message : 'Error al registrar el pago')
+      }
     } finally {
       setGuardando(false)
     }

@@ -1,0 +1,32 @@
+# Mantiene despierta la API de Render (plan free).
+#
+# Render suspende el servicio tras 15 minutos sin tráfico. Un ping cada 10
+# minutos evita el cold start que hacía que la primera venta del día tardara
+# decenas de segundos. GitHub puede retrasar las ejecuciones programadas, así
+# que si se necesita una garantía estricta conviene usar un monitor externo o
+# el plan pago de Render.
+name: Mantener API despierta
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive-api
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping a /api/health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Comprobar salud de la API
+        run: >
+          curl --fail --silent --show-error --max-time 20
+          --retry 2 --retry-delay 5
+          https://pos-casacultural-api.onrender.com/api/health

@@ -1,8 +1,10 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload, selectinload
 from fastapi import HTTPException
 from app.db.models import (
     Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja,
-    Pago, Cliente, EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex, TipoMovimientoCaja
+    Pago, PagoIdempotente, Cliente, EstadoFactura, FormaPago,
+    TipoMovimientoInventario, Kardex, TipoMovimientoCaja
 )
 from app.core.timezone import get_colombia_time
 from app.core.categorias_caja import (
@@ -12,7 +14,68 @@ from app.core.categorias_caja import (
 from app.crud import crud_cliente
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
 
-def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
+def _factura_con_relaciones(db: Session, factura_id: int) -> Factura:
+    """Carga la factura con sus relaciones antes de serializar la respuesta.
+
+    Evita *lazy loads* después del commit (cada uno es un viaje extra a la base
+    de datos y, si la conexión se corta, la respuesta puede quedar colgada).
+    """
+    return (
+        db.query(Factura)
+        .options(
+            selectinload(Factura.detalles),
+            selectinload(Factura.pagos),
+            joinedload(Factura.cliente),
+        )
+        .filter(Factura.id == factura_id)
+        .one()
+    )
+
+
+def _buscar_factura_idempotente(
+    db: Session, clave: str, vendedor_id: int
+) -> Factura | None:
+    factura = (
+        db.query(Factura)
+        .options(
+            selectinload(Factura.detalles),
+            selectinload(Factura.pagos),
+            joinedload(Factura.cliente),
+        )
+        .filter(Factura.clave_idempotencia == clave)
+        .first()
+    )
+    if factura and factura.vendedor_id != vendedor_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Esa clave de idempotencia ya fue usada por otro usuario. "
+                "No se registró ninguna venta nueva."
+            ),
+        )
+    return factura
+
+
+def crear_factura(
+    db: Session,
+    factura_in: FacturaCreate,
+    vendedor_id: int,
+    clave_idempotencia: str | None = None,
+):
+    # Un reintento del navegador (timeout, red móvil inestable, cold start)
+    # reutiliza la misma clave. Si la venta ya se guardó, se devuelve tal cual
+    # para no duplicar la factura ni volver a descontar stock.
+    clave = (clave_idempotencia or "").strip() or None
+    if clave and len(clave) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="La clave de idempotencia no puede superar 64 caracteres.",
+        )
+    if clave:
+        existente = _buscar_factura_idempotente(db, clave, vendedor_id)
+        if existente:
+            return existente
+
     # El cliente eventual (reemplazo de "Consumidor final") se usa cuando no se
     # selecciona un cliente real; el nombre temporal queda como texto.
     nombre_eventual = (factura_in.nombre_eventual or "").strip() or None
@@ -26,7 +89,7 @@ def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
     # crédito al cerrar caja.
     caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
 
-    # 1. Crear la cabecera de la factura primero para obtener un ID temporal
+    # 1. Crear la cabecera de la factura primero para obtener un ID temporal.
     db_factura = Factura(
         cliente_id=cliente_id,
         vendedor_id=vendedor_id,
@@ -34,41 +97,81 @@ def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
         turno_caja_id=caja_abierta.id if caja_abierta else None,
         estado=EstadoFactura.ABIERTA,
         total=0,
-        saldo=0
+        saldo=0,
+        clave_idempotencia=clave,
     )
     db.add(db_factura)
-    db.flush() # Envía a la base de datos pero NO hace commit aún (Transaction ACID)
-    
+    try:
+        # Envía a la base de datos pero NO hace commit aún (Transaction ACID).
+        db.flush()
+    except IntegrityError:
+        # Dos peticiones con la misma clave llegaron a la vez. La que perdió
+        # la carrera devuelve la factura que sí se guardó.
+        db.rollback()
+        if clave:
+            existente = _buscar_factura_idempotente(db, clave, vendedor_id)
+            if existente:
+                return existente
+        # Otro error de integridad (p. ej. un cliente inexistente) no debe
+        # disfrazarse de conflicto de concurrencia.
+        raise
+
+    # Bloquea todos los productos en un solo viaje y en orden de id (orden
+    # estable). Antes se hacía una consulta por ítem, lo que multiplicaba la
+    # latencia contra Neon y permitía interbloqueos si dos ventas tocaban los
+    # mismos productos en orden distinto.
+    productos: dict[int, Producto] = {}
+    if factura_in.detalles:
+        ids = {detalle.producto_id for detalle in factura_in.detalles}
+        productos = {
+            producto.id: producto
+            for producto in (
+                db.query(Producto)
+                .filter(Producto.id.in_(ids))
+                .order_by(Producto.id)
+                .with_for_update()
+                .all()
+            )
+        }
+
     total_factura = 0.0
-    
+
     for detalle_in in factura_in.detalles:
-        # Usamos with_for_update() para bloquear la fila y evitar problemas de concurrencia al vender
-        producto = db.query(Producto).filter(Producto.id == detalle_in.producto_id).with_for_update().first()
-        
+        producto = productos.get(detalle_in.producto_id)
+
         if not producto:
             db.rollback()
-            raise HTTPException(status_code=404, detail=f"Producto con ID {detalle_in.producto_id} no encontrado")
-            
+            raise HTTPException(
+                status_code=404,
+                detail=f"Producto con ID {detalle_in.producto_id} no encontrado",
+            )
+
         if producto.stock < detalle_in.cantidad:
             db.rollback()
-            raise HTTPException(status_code=400, detail=f"Stock insuficiente para el producto: {producto.nombre}. Disponible: {producto.stock}")
-            
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Stock insuficiente para el producto: {producto.nombre}. "
+                    f"Disponible: {producto.stock}"
+                ),
+            )
+
         subtotal = producto.precio * detalle_in.cantidad
         total_factura += subtotal
-        
+
         # 2. Agregar Detalle
         db_detalle = DetalleFactura(
             factura_id=db_factura.id,
             producto_id=producto.id,
             cantidad=detalle_in.cantidad,
             precio_unitario=producto.precio,
-            subtotal=subtotal
+            subtotal=subtotal,
         )
         db.add(db_detalle)
-        
+
         # 3. Restar stock real
         producto.stock -= detalle_in.cantidad
-        
+
         # 4. Generar el registro en Kardex por la salida
         db_kardex = Kardex(
             producto_id=producto.id,
@@ -76,22 +179,77 @@ def crear_factura(db: Session, factura_in: FacturaCreate, vendedor_id: int):
             tipo_movimiento=TipoMovimientoInventario.SALIDA_VENTA,
             cantidad=detalle_in.cantidad,
             saldo_stock=producto.stock,
-            referencia=f"Venta en Factura #{db_factura.id}"
+            referencia=f"Venta en Factura #{db_factura.id}",
         )
         db.add(db_kardex)
-        
+
     db_factura.total = total_factura
-    db_factura.saldo = total_factura # El saldo inicial adeudado es el total
-    
-    db.commit() # ¡Éxito! Todo se guarda simultáneamente (Factura + Detalles + Stock + Kardex)
-    db.refresh(db_factura)
-    return db_factura
+    db_factura.saldo = total_factura  # El saldo inicial adeudado es el total
+
+    factura_id = db_factura.id
+    try:
+        # ¡Éxito! Todo se guarda simultáneamente (Factura + Detalles + Stock + Kardex)
+        db.commit()
+    except IntegrityError:
+        # Carrera de idempotencia en el commit (el índice único se valida al
+        # final). Se descarta esta transacción y se devuelve la ganadora.
+        db.rollback()
+        if clave:
+            existente = _buscar_factura_idempotente(db, clave, vendedor_id)
+            if existente:
+                return existente
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo registrar la venta por un conflicto de concurrencia. Intenta de nuevo.",
+        )
+
+    return _factura_con_relaciones(db, factura_id)
 
 
-def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate], cajero_id: int):
+
+def _buscar_pago_idempotente(
+    db: Session, clave: str, factura_id: int
+) -> PagoIdempotente | None:
+    operacion = (
+        db.query(PagoIdempotente)
+        .filter(PagoIdempotente.clave == clave)
+        .first()
+    )
+    if operacion and operacion.factura_id != factura_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Esa clave de idempotencia ya fue usada para cobrar otra factura. "
+                "No se registró ningún pago nuevo."
+            ),
+        )
+    return operacion
+
+
+def registrar_pagos_factura(
+    db: Session,
+    factura_id: int,
+    pagos: list[PagoCreate],
+    cajero_id: int,
+    clave_idempotencia: str | None = None,
+):
     """Registra uno o varios pagos (medios de pago combinados) sobre una factura."""
     if not pagos:
         raise HTTPException(status_code=400, detail="Debe registrar al menos un pago.")
+
+    # Un reintento del navegador tras un timeout puede llegar cuando el cobro
+    # ya se guardó (incluso si la caja se cerró después). En ese caso se
+    # devuelve la factura tal como quedó, sin volver a cobrar.
+    clave = (clave_idempotencia or "").strip() or None
+    if clave and len(clave) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="La clave de idempotencia no puede superar 64 caracteres.",
+        )
+    if clave:
+        existente = _buscar_pago_idempotente(db, clave, factura_id)
+        if existente:
+            return _factura_con_relaciones(db, factura_id)
 
     # Los abonos por nómina no son un cobro de caja: se registran desde la
     # sección de nómina del usuario vinculado, no desde el cobro de facturas.
@@ -111,6 +269,15 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
 
+    # Otra petición con la misma clave pudo terminar mientras esperábamos el
+    # bloqueo de la factura. Se comprueba de nuevo antes de cobrar.
+    if clave:
+        existente = _buscar_pago_idempotente(db, clave, factura_id)
+        if existente:
+            # Soltamos el bloqueo de la factura antes de serializar.
+            db.rollback()
+            return _factura_con_relaciones(db, factura_id)
+
     if factura.estado in [EstadoFactura.PAGADA, EstadoFactura.ANULADA]:
         db.rollback()
         raise HTTPException(status_code=400, detail="La factura ya se encuentra pagada o está anulada.")
@@ -125,7 +292,23 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
         db.rollback()
         raise HTTPException(status_code=400, detail=f"El valor total de los pagos ({total}) excede el saldo pendiente ({factura.saldo})")
 
-    # 3. Registrar cada pago y su entrada de caja
+    # 3. Reservar la clave antes de insertar los pagos. El índice único es la
+    # última barrera si dos peticiones idénticas llegan exactamente a la vez.
+    if clave:
+        db.add(PagoIdempotente(clave=clave, factura_id=factura.id))
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            existente = _buscar_pago_idempotente(db, clave, factura_id)
+            if existente:
+                return _factura_con_relaciones(db, factura_id)
+            raise HTTPException(
+                status_code=409,
+                detail="No se pudo registrar el pago por un conflicto de concurrencia. Intenta de nuevo.",
+            )
+
+    # 4. Registrar cada pago y su entrada de caja
     for pago in pagos:
         db.add(Pago(
             factura_id=factura.id,
@@ -144,7 +327,7 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
             observacion="Cobro de ventas"
         ))
 
-    # 4. Actualizar Saldos y Estados
+    # 5. Actualizar Saldos y Estados
     factura.saldo = round(factura.saldo - total, 2)
     if factura.saldo <= 0: # Check robusto
         factura.estado = EstadoFactura.PAGADA
@@ -152,14 +335,38 @@ def registrar_pagos_factura(db: Session, factura_id: int, pagos: list[PagoCreate
     else:
         factura.estado = EstadoFactura.PAGADO_PARCIAL
 
-    db.commit() # Atomicidad: Pago + Flujo de Caja + Actualización de Factura
-    db.refresh(factura)
-    return factura
+    factura_id_guardada = factura.id
+    try:
+        db.commit() # Atomicidad: Pago + Flujo de Caja + Actualización de Factura
+    except IntegrityError:
+        db.rollback()
+        if clave:
+            existente = _buscar_pago_idempotente(db, clave, factura_id_guardada)
+            if existente:
+                return _factura_con_relaciones(db, factura_id_guardada)
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo registrar el pago por un conflicto de concurrencia. Intenta de nuevo.",
+        )
+
+    return _factura_con_relaciones(db, factura_id_guardada)
 
 
-def registrar_pago_factura(db: Session, factura_id: int, pago_in: PagoCreate, cajero_id: int):
+def registrar_pago_factura(
+    db: Session,
+    factura_id: int,
+    pago_in: PagoCreate,
+    cajero_id: int,
+    clave_idempotencia: str | None = None,
+):
     """Compatibilidad: registra un único pago."""
-    return registrar_pagos_factura(db, factura_id, [pago_in], cajero_id)
+    return registrar_pagos_factura(
+        db,
+        factura_id,
+        [pago_in],
+        cajero_id,
+        clave_idempotencia=clave_idempotencia,
+    )
 
 
 def anular_factura(db: Session, factura_id: int, usuario_id: int, motivo: str | None = None):

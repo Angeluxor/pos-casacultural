@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from app.db.migraciones import inicializar_esquema
 from app.core.config import CORS_ORIGINS, validar_configuracion
@@ -65,6 +67,25 @@ app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
 @app.get("/")
 def read_root():
     return {"message": "Bienvenido a la API del POS Casi Obsceno"}
+
+
+@app.exception_handler(OperationalError)
+async def error_operativo_bd(_request: Request, _exc: OperationalError):
+    """Convierte timeouts/bloqueos de PostgreSQL en un 503 legible.
+
+    Con ``lock_timeout`` configurado, una venta que espera una fila bloqueada
+    falla rápido en vez de dejar la UI cargando. El cliente recibe un mensaje
+    claro y puede reintentar sin duplicar la factura.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": (
+                "La base de datos tardó demasiado o no está disponible. "
+                "Intenta de nuevo en unos segundos."
+            )
+        },
+    )
 
 
 @app.get("/api/health", tags=["Salud"])

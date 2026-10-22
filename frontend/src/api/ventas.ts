@@ -53,6 +53,14 @@ export type FacturaCreate = {
   detalles: { producto_id: number; cantidad: number }[]
 }
 
+export type CrearFacturaOpciones = {
+  /** Clave para reintentos seguros. El backend devuelve la misma factura. */
+  claveIdempotencia?: string
+  timeoutMs?: number
+}
+
+export type PagarFacturaOpciones = CrearFacturaOpciones
+
 export type TotalesFacturas = {
   total_facturado: number
   saldo: number
@@ -96,8 +104,18 @@ export function obtenerFactura(id: number): Promise<Factura> {
   return apiFetch<Factura>(`/api/facturas/${id}`)
 }
 
-export function crearFactura(data: FacturaCreate): Promise<Factura> {
-  return apiJson<Factura>('/api/facturas/', 'POST', data)
+export function crearFactura(
+  data: FacturaCreate,
+  opciones: CrearFacturaOpciones = {},
+): Promise<Factura> {
+  const headers = new Headers()
+  if (opciones.claveIdempotencia) {
+    headers.set('Idempotency-Key', opciones.claveIdempotencia)
+  }
+  return apiJson<Factura>('/api/facturas/', 'POST', data, {
+    headers,
+    timeoutMs: opciones.timeoutMs,
+  })
 }
 
 export function asignarClienteFactura(
@@ -110,8 +128,16 @@ export function asignarClienteFactura(
 export function pagarFactura(
   id: number,
   data: PagoCreate | PagoCreate[],
+  opciones: PagarFacturaOpciones = {},
 ): Promise<Factura> {
-  return apiJson<Factura>(`/api/facturas/${id}/pagos`, 'POST', data)
+  const headers = new Headers()
+  if (opciones.claveIdempotencia) {
+    headers.set('Idempotency-Key', opciones.claveIdempotencia)
+  }
+  return apiJson<Factura>(`/api/facturas/${id}/pagos`, 'POST', data, {
+    headers,
+    timeoutMs: opciones.timeoutMs,
+  })
 }
 
 export function anularFactura(id: number, motivo?: string): Promise<Factura> {

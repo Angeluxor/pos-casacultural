@@ -9,6 +9,43 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ---
 
+## [Sin publicar]
+
+### Corregido
+
+- **Ventas que se quedaban en «Guardando…»**: la factura sí se guardaba, pero
+  si la respuesta se perdía (red móvil, timeout o cold start de Render) la UI
+  esperaba indefinidamente y el cajero no sabía si la venta había quedado
+  registrada. La creación de ventas ahora es idempotente: el navegador reintenta
+  una vez con la misma `Idempotency-Key` y el backend devuelve la factura
+  original en lugar de duplicarla. Las peticiones tienen timeout y, si el cobro
+  no se confirma, se avisa para revisar la factura antes de reintentar.
+- **Cobros duplicados tras un timeout**: al reintentar un abono parcial cuya
+  respuesta se había perdido, podía insertarse dos veces el pago y el
+  movimiento de caja. Ahora el cobro también es idempotente mediante
+  `Idempotency-Key`: el backend devuelve la factura ya cobrada sin duplicar
+  pagos ni entradas de caja.
+- **Esperas ilimitadas en PostgreSQL**: se configuran `lock_timeout`,
+  `statement_timeout` e `idle_in_transaction_session_timeout` para que una fila
+  bloqueada no deje la venta cargando durante minutos.
+
+### Rendimiento
+
+- La creación de una venta bloquea todos los productos en una sola consulta
+  (ordenada por id) en vez de hacer una consulta por ítem. Menos viajes a Neon,
+  menos latencia y sin riesgo de interbloqueos por orden de bloqueo.
+- La respuesta de la factura se carga con sus detalles, pagos y cliente de forma
+  anticipada, sin consultas perezosas después del commit.
+
+### Mantenimiento
+
+- **Ping automático a la API**: un workflow de GitHub Actions consulta
+  `/api/health` cada 10 minutos para reducir los cold starts del plan free de
+  Render. Si GitHub retrasa la ejecución, el servicio puede suspenderse igual;
+  para una garantía estricta se recomienda un monitor externo o el plan pago.
+
+---
+
 ## [1.0.0] — 2026-10-20
 
 Primera versión de producción con la operación completa: ventas, caja,

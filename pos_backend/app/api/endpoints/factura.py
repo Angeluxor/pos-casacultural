@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import case, func
 from typing import Optional
@@ -26,13 +26,35 @@ from app.core.orden import ordenar
 router = APIRouter()
 
 @router.post("/", response_model=FacturaResponse)
-def crear_factura(factura: FacturaCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.crear"))):
-    return crud_factura.crear_factura(db=db, factura_in=factura, vendedor_id=current_user.id)
+def crear_factura(
+    factura: FacturaCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ventas.crear")),
+):
+    return crud_factura.crear_factura(
+        db=db,
+        factura_in=factura,
+        vendedor_id=current_user.id,
+        clave_idempotencia=idempotency_key,
+    )
 
 @router.post("/{factura_id}/pagos", response_model=FacturaResponse)
-def registrar_pagos(factura_id: int, pagos: PagoCreate | list[PagoCreate], db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("ventas.cobrar"))):
+def registrar_pagos(
+    factura_id: int,
+    pagos: PagoCreate | list[PagoCreate],
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ventas.cobrar")),
+):
     lista = pagos if isinstance(pagos, list) else [pagos]
-    return crud_factura.registrar_pagos_factura(db=db, factura_id=factura_id, pagos=lista, cajero_id=current_user.id)
+    return crud_factura.registrar_pagos_factura(
+        db=db,
+        factura_id=factura_id,
+        pagos=lista,
+        cajero_id=current_user.id,
+        clave_idempotencia=idempotency_key,
+    )
 
 @router.get("/", response_model=PaginaFacturas)
 def listar_facturas(
