@@ -44,6 +44,7 @@ def registrar_pagos(
     factura_id: int,
     pagos: PagoCreate | list[PagoCreate],
     idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    turno_caja_id: Optional[int] = Header(default=None, alias="X-Turno-Caja-Id"),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permiso("ventas.cobrar")),
 ):
@@ -54,6 +55,7 @@ def registrar_pagos(
         pagos=lista,
         cajero_id=current_user.id,
         clave_idempotencia=idempotency_key,
+        turno_caja_id=turno_caja_id,
     )
 
 @router.get("/", response_model=PaginaFacturas)

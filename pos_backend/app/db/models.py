@@ -298,6 +298,13 @@ class Factura(Base):
     # Clave enviada por el cliente (cabecera ``Idempotency-Key``) para que un
     # reintento después de un timeout no cree una venta duplicada.
     clave_idempotencia = Column(String(64), unique=True, index=True, nullable=True)
+    # "online" u "offline": una venta sincronizada desde la cola local conserva
+    # la fecha, el turno y los precios cobrados en el dispositivo.
+    origen = Column(String(16), default="online", nullable=False)
+    # Se activa cuando una venta offline deja stock negativo o se sincroniza
+    # contra un turno ya cerrado. El POS la muestra para revisión manual.
+    requiere_revision = Column(Boolean, default=False, nullable=False, index=True)
+    nota_revision = Column(Text, nullable=True)
 
     # Trazabilidad de anulación
     motivo_anulacion = Column(String, nullable=True)

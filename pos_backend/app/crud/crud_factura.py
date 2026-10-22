@@ -1,6 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 from fastapi import HTTPException
+from datetime import datetime, timedelta
 from app.db.models import (
     Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja,
     Pago, PagoIdempotente, Cliente, EstadoFactura, FormaPago,
@@ -13,6 +14,19 @@ from app.core.categorias_caja import (
 )
 from app.crud import crud_cliente
 from app.schemas.factura import FacturaCreate, PagoCreate, ItemFacturaCreate, ItemFacturaUpdate
+
+def _fecha_operacion(fecha: datetime | None) -> datetime:
+    """Normaliza la fecha enviada por un POS offline y limita fechas futuras."""
+    ahora = get_colombia_time()
+    if fecha is None:
+        return ahora
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=ahora.tzinfo)
+    if fecha > ahora + timedelta(minutes=5):
+        # Un reloj de dispositivo adelantado no debe bloquear una venta que ya
+        # ocurrió. Se usa la hora del servidor y la operación queda registrada.
+        return ahora
+    return fecha
 
 def _factura_con_relaciones(db: Session, factura_id: int) -> Factura:
     """Carga la factura con sus relaciones antes de serializar la respuesta.
@@ -85,20 +99,53 @@ def crear_factura(
     else:
         cliente_id = crud_cliente.obtener_o_crear_cliente_eventual(db).id
 
-    # La venta queda atada al turno de caja abierto (si lo hay) para el paso a
-    # crédito al cerrar caja.
-    caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+    # Turno y fecha de la operación. En una venta online se usa la caja abierta
+    # y la hora del servidor; en una offline se conserva el turno y la hora del
+    # dispositivo.
+    notas_revision: list[str] = []
+    turno_caja_id = None
+    if factura_in.origen_offline and factura_in.turno_caja_id is not None:
+        turno = (
+            db.query(TurnoCaja)
+            .filter(TurnoCaja.id == factura_in.turno_caja_id)
+            .first()
+        )
+        if not turno:
+            raise HTTPException(status_code=400, detail="Turno de caja no encontrado.")
+        turno_caja_id = turno.id
+        if not turno.abierta:
+            notas_revision.append(
+                f"La venta se sincronizó con el turno #{turno.id}, que ya estaba cerrado."
+            )
+    else:
+        caja_abierta = (
+            db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+        )
+        turno_caja_id = caja_abierta.id if caja_abierta else None
+        if factura_in.origen_offline and not turno_caja_id:
+            notas_revision.append(
+                "La venta offline no tenía un turno de caja abierto."
+            )
+    # Una venta online siempre usa la hora del servidor. La fecha del cliente
+    # solo se conserva cuando la venta viene de la cola offline.
+    fecha_factura = (
+        _fecha_operacion(factura_in.fecha)
+        if factura_in.origen_offline
+        else get_colombia_time()
+    )
 
     # 1. Crear la cabecera de la factura primero para obtener un ID temporal.
     db_factura = Factura(
         cliente_id=cliente_id,
         vendedor_id=vendedor_id,
         nombre_eventual=nombre_eventual,
-        turno_caja_id=caja_abierta.id if caja_abierta else None,
+        turno_caja_id=turno_caja_id,
+        fecha=fecha_factura,
         estado=EstadoFactura.ABIERTA,
         total=0,
         saldo=0,
         clave_idempotencia=clave,
+        origen="offline" if factura_in.origen_offline else "online",
     )
     db.add(db_factura)
     try:
@@ -146,17 +193,34 @@ def crear_factura(
                 detail=f"Producto con ID {detalle_in.producto_id} no encontrado",
             )
 
+        precio_unitario = producto.precio
+        if factura_in.origen_offline and detalle_in.precio_unitario is not None:
+            if detalle_in.precio_unitario < 0:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail="El precio cobrado de cada producto no puede ser negativo.",
+                )
+            precio_unitario = detalle_in.precio_unitario
+
         if producto.stock < detalle_in.cantidad:
-            db.rollback()
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuficiente para el producto: {producto.nombre}. "
-                    f"Disponible: {producto.stock}"
-                ),
+            if not factura_in.origen_offline:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Stock insuficiente para el producto: {producto.nombre}. "
+                        f"Disponible: {producto.stock}"
+                    ),
+                )
+            # Una venta offline ya ocurrió físicamente. No se rechaza: se deja
+            # el stock negativo y se marca la factura para revisión.
+            notas_revision.append(
+                f"Stock insuficiente de {producto.nombre}: quedó "
+                f"{producto.stock - detalle_in.cantidad}."
             )
 
-        subtotal = producto.precio * detalle_in.cantidad
+        subtotal = precio_unitario * detalle_in.cantidad
         total_factura += subtotal
 
         # 2. Agregar Detalle
@@ -164,7 +228,7 @@ def crear_factura(
             factura_id=db_factura.id,
             producto_id=producto.id,
             cantidad=detalle_in.cantidad,
-            precio_unitario=producto.precio,
+            precio_unitario=precio_unitario,
             subtotal=subtotal,
         )
         db.add(db_detalle)
@@ -185,6 +249,9 @@ def crear_factura(
 
     db_factura.total = total_factura
     db_factura.saldo = total_factura  # El saldo inicial adeudado es el total
+    if notas_revision:
+        db_factura.requiere_revision = True
+        db_factura.nota_revision = " ".join(dict.fromkeys(notas_revision))[:2000]
 
     factura_id = db_factura.id
     try:
@@ -232,6 +299,7 @@ def registrar_pagos_factura(
     pagos: list[PagoCreate],
     cajero_id: int,
     clave_idempotencia: str | None = None,
+    turno_caja_id: int | None = None,
 ):
     """Registra uno o varios pagos (medios de pago combinados) sobre una factura."""
     if not pagos:
@@ -259,10 +327,30 @@ def registrar_pagos_factura(
             detail="Los abonos por nómina se registran desde la sección de nómina del usuario.",
         )
 
-    # 1. Verificar si hay Caja Abierta
-    caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
-    if not caja_abierta:
-        raise HTTPException(status_code=400, detail="No se pueden registrar pagos. No hay una caja abierta actualmente.")
+    # 1. Verificar la caja. Un cobro offline puede indicar el turno en el que
+    # ocurrió; si no, se usa la caja abierta actual.
+    if turno_caja_id is not None:
+        caja_abierta = (
+            db.query(TurnoCaja).filter(TurnoCaja.id == turno_caja_id).first()
+        )
+        if not caja_abierta:
+            raise HTTPException(
+                status_code=400, detail="Turno de caja no encontrado."
+            )
+        if not caja_abierta.abierta:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "El turno de caja ya está cerrado. Abre una caja nueva "
+                    "para registrar el cobro."
+                ),
+            )
+    else:
+        caja_abierta = (
+            db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+        )
+        if not caja_abierta:
+            raise HTTPException(status_code=400, detail="No se pueden registrar pagos. No hay una caja abierta actualmente.")
 
     # 2. Buscar factura (con bloqueo de fila)
     factura = db.query(Factura).filter(Factura.id == factura_id).with_for_update().first()
@@ -286,6 +374,7 @@ def registrar_pagos_factura(
         if pago.valor <= 0:
             db.rollback()
             raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a 0.")
+        _fecha_operacion(pago.fecha)
 
     total = round(sum(pago.valor for pago in pagos), 2)
     if total > factura.saldo:
@@ -310,15 +399,18 @@ def registrar_pagos_factura(
 
     # 4. Registrar cada pago y su entrada de caja
     for pago in pagos:
+        fecha_pago = _fecha_operacion(pago.fecha)
         db.add(Pago(
             factura_id=factura.id,
             cajero_id=cajero_id,
+            fecha=fecha_pago,
             valor=pago.valor,
             forma_pago=pago.forma_pago
         ))
         db.add(RegistroCaja(
             turno_caja_id=caja_abierta.id,
             usuario_id=cajero_id,
+            fecha=fecha_pago,
             tipo=TipoMovimientoCaja.ENTRADA,
             referencia=f"Abono a Factura #{factura.id}",
             forma_pago=pago.forma_pago,
@@ -358,6 +450,7 @@ def registrar_pago_factura(
     pago_in: PagoCreate,
     cajero_id: int,
     clave_idempotencia: str | None = None,
+    turno_caja_id: int | None = None,
 ):
     """Compatibilidad: registra un único pago."""
     return registrar_pagos_factura(
@@ -366,6 +459,7 @@ def registrar_pago_factura(
         [pago_in],
         cajero_id,
         clave_idempotencia=clave_idempotencia,
+        turno_caja_id=turno_caja_id,
     )
 
 

@@ -6,6 +6,10 @@ from app.db.models import EstadoFactura, FormaPago
 class DetalleFacturaCreate(BaseModel):
     producto_id: int
     cantidad: int
+    # Solo se usa en ventas offline: el precio que se cobró realmente en el
+    # dispositivo, aunque el catálogo del servidor haya cambiado mientras
+    # tanto. En ventas online se ignora y manda el precio actual.
+    precio_unitario: Optional[float] = None
 
 class DetalleFacturaResponse(BaseModel):
     id: int
@@ -21,6 +25,8 @@ class DetalleFacturaResponse(BaseModel):
 class ItemFacturaCreate(BaseModel):
     producto_id: int
     cantidad: int
+    # Solo se usa en ventas offline; ver DetalleFacturaCreate.
+    precio_unitario: Optional[float] = None
 
 
 class ItemFacturaUpdate(BaseModel):
@@ -32,6 +38,10 @@ class FacturaCreate(BaseModel):
     # Nombre temporal/eventual cuando el cliente no se registra.
     nombre_eventual: Optional[str] = None
     detalles: List[ItemFacturaCreate] = []
+    # Campos de sincronización offline. En una venta online se dejan vacíos.
+    fecha: Optional[datetime] = None
+    turno_caja_id: Optional[int] = None
+    origen_offline: bool = False
 
 
 class FacturaClienteUpdate(BaseModel):
@@ -46,6 +56,9 @@ class PagoCreate(BaseModel):
     cajero_id: Optional[int] = None
     valor: float
     forma_pago: FormaPago
+    # Fecha en que se recibió el dinero. En cobros offline se envía la hora
+    # real del dispositivo; en online se deja nula para usar la del servidor.
+    fecha: Optional[datetime] = None
 
 class PagoResponse(BaseModel):
     id: int
@@ -68,6 +81,9 @@ class FacturaResponse(BaseModel):
     total: float
     saldo: float
     estado: EstadoFactura
+    origen: str = "online"
+    requiere_revision: bool = False
+    nota_revision: Optional[str] = None
     motivo_anulacion: Optional[str] = None
     fecha_anulacion: Optional[datetime] = None
     anulada_por_id: Optional[int] = None
