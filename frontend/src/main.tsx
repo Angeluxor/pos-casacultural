@@ -5,15 +5,28 @@ import './index.css'
 import './App.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider.tsx'
+import { OfflineProvider } from './offline/OfflineProvider.tsx'
 import { instalarCapturaErrores } from './lib/feedbackContext.ts'
 
 instalarCapturaErrores()
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker
+      .register('/sw.js', { updateViaCache: 'none' })
+      .catch(() => {
+        // Sin service worker la app sigue funcionando, pero no abre sin red.
+      })
+  })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <App />
+        <OfflineProvider>
+          <App />
+        </OfflineProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

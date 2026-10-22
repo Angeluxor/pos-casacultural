@@ -39,6 +39,22 @@ export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
 export const setToken = (token: string): void => localStorage.setItem(TOKEN_KEY, token)
 export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY)
 
+function notificarRed(evento: 'pos:sin-conexion' | 'pos:conexion'): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(evento))
+  }
+}
+
+/** Error de red o de disponibilidad: la operación puede reintentarse. */
+export function esErrorRed(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 0 || err.status >= 500)
+}
+
+/** Error seguro de reintentar con la misma clave de idempotencia. */
+export function esErrorReintentable(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 0 || err.status === 503)
+}
+
 export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Promise<T> {
   const { timeoutMs = TIEMPO_MAXIMO_MS, signal: signalExterno, ...init } = options
   const headers = new Headers(init.headers)
@@ -64,10 +80,13 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
         signal: controller.signal,
       })
     } catch {
+      if (signalExterno?.aborted) {
+        throw new ApiError(0, 'La operación fue cancelada')
+      }
+      // Un timeout o un fallo de red activa el modo offline de la UI. Cualquier
+      // respuesta posterior del servidor lo desactiva.
+      notificarRed('pos:sin-conexion')
       if (controller.signal.aborted) {
-        if (signalExterno?.aborted) {
-          throw new ApiError(0, 'La operación fue cancelada')
-        }
         throw new ApiError(
           0,
           'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',
@@ -77,8 +96,14 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
       throw new ApiError(0, 'No se pudo conectar con el servidor')
     }
 
+    // Llegó una respuesta HTTP (aunque sea de error): hay conexión.
+    notificarRed('pos:conexion')
+
     if (res.status === 401) {
       clearToken()
+      if (!path.includes('/auth/login') && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('pos:sesion-expirada'))
+      }
       let detalle = 'Sesión no válida o expirada'
       if (path.includes('/auth/login')) {
         try {
@@ -109,6 +134,7 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
       if (signalExterno?.aborted) {
         throw new ApiError(0, 'La operación fue cancelada')
       }
+      notificarRed('pos:sin-conexion')
       throw new ApiError(
         0,
         'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',

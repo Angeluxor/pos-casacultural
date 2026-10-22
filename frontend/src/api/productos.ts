@@ -55,8 +55,12 @@ export type KardexMovimiento = {
   motivo_detalle: string | null
 }
 
-export async function listarProductos(): Promise<Producto[]> {
-  const r = await apiFetch<Pagina<Producto>>('/api/productos/?limit=1000')
+export async function listarProductos(
+  opciones: { timeoutMs?: number } = {},
+): Promise<Producto[]> {
+  const r = await apiFetch<Pagina<Producto>>('/api/productos/?limit=1000', {
+    timeoutMs: opciones.timeoutMs,
+  })
   return r.items
 }
 

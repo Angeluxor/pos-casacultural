@@ -11,6 +11,26 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ## [Sin publicar]
 
+### Añadido
+
+- **Modo offline (Fase 1)**: la app se puede instalar como PWA y abrir sin red.
+  Se guardan localmente la sesión (12 h), el catálogo de productos/clientes, la
+  caja activa y la última lista de ventas. Las ventas y los cobros creados sin
+  conexión entran en una cola local con fecha, turno y precios reales; al volver
+  la red se sincronizan con las claves de idempotencia existentes. La UI muestra
+  un banner de estado, las operaciones pendientes y un botón de reintento.
+- **Cierre de caja protegido**: no se puede cerrar un turno mientras haya
+  operaciones offline pendientes. El cierre intenta sincronizarlas primero y se
+  bloquea si alguna queda con error.
+- **Ventas offline con stock negativo**: si al sincronizar ya no alcanza el
+  stock, la venta no se pierde: el stock queda negativo y la factura se marca
+  con `requiere_revision` y una nota visible en Ventas.
+- **Trazabilidad offline**: las facturas distinguen `origen` online/offline. El
+  backend acepta fecha, turno y precio unitario de la operación original, y los
+  pagos conservan la fecha y el turno en que se recibieron.
+- Migración `0020_metadatos_offline` para `facturas.origen`,
+  `facturas.requiere_revision`, `facturas.nota_revision` y su índice.
+
 ### Corregido
 
 - **Ventas que se quedaban en «Guardando…»**: la factura sí se guardaba, pero
@@ -43,6 +63,20 @@ internos de desarrollo; no existen tags publicados de esas versiones.
   `/api/health` cada 10 minutos para reducir los cold starts del plan free de
   Render. Si GitHub retrasa la ejecución, el servicio puede suspenderse igual;
   para una garantía estricta se recomienda un monitor externo o el plan pago.
+
+### Limitaciones del modo offline
+
+- Solo ventas y cobros funcionan sin red. Productos, clientes, caja,
+  inventario, reportes y administración siguen requiriendo conexión.
+- La cola y el catálogo se guardan en `localStorage` del navegador. Borrar los
+  datos del sitio o usar otro navegador/dispositivo no traslada las operaciones
+  pendientes.
+- Varios dispositivos pueden vender el mismo stock sin red. Al sincronizar, la
+  venta se conserva y queda marcada para revisión; el inventario debe ajustarse
+  manualmente.
+- La sesión cacheada dura 12 horas. Si el token expira durante el modo offline,
+  las operaciones quedan en cola hasta que el mismo usuario vuelva a iniciar
+  sesión con conexión.
 
 ---
 

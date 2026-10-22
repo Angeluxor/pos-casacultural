@@ -10,6 +10,7 @@ Sistema de **punto de venta (POS)** web para Casi Obsceno: gestión de inventari
 - **Productos con kardex**: entrada por compra, salida por venta, devoluciones y ajustes, con saldo de stock histórico.
 - **Ventas / facturas**: pago total o parcial, formas de pago (efectivo, transferencia, tarjeta, otro), anulación con motivo y trazabilidad (quién y cuándo), retiro de renglones sin borrar la traza.
 - **Caja**: apertura y cierre de turno con saldo inicial, movimientos de entrada/salida y conciliación de saldo final.
+- **Modo offline (Fase 1)**: PWA instalable, sesión/catálogo/caja cacheados y cola local de ventas y cobros que se sincroniza al volver la red. El cierre de caja se bloquea si quedan operaciones pendientes.
 - **Clientes**: documento (único), celular y correo.
 - **Usuarios**: creación, edición, cambio de contraseña y eliminación (solo admin).
 - **Dashboard** con métricas de ventas y filtro por rango de fechas.
@@ -37,6 +38,14 @@ Navegador
 │  (estático)   │        │  /api/*             │        │  (pooler)     │
 └───────────────┘        └────────────────────┘        └───────────────┘
 ```
+
+## Modo offline
+
+- La primera vez hay que abrir la app **con conexión** para instalar el service worker y guardar el catálogo y la caja activa.
+- Sin red se pueden registrar ventas y cobros si hay una caja abierta cacheada. Quedan en una cola local y se envían solos al recuperar la conexión; también se pueden reintentar desde el banner o desde Ventas.
+- No se puede cerrar la caja hasta que la cola quede vacía.
+- Editar productos, abrir/cerrar caja, inventario, reportes y administración requieren conexión.
+- Si una venta offline deja el stock negativo, se conserva y se marca **Revisar** en Ventas. Varios dispositivos offline pueden sobrevender; el inventario debe conciliarse manualmente.
 
 ## Estructura del proyecto
 

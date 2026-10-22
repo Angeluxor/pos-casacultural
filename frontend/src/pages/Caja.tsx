@@ -17,6 +17,7 @@ import {
   type TurnoCaja,
   type TurnoCajaHistorial,
 } from '../api/caja'
+import { esErrorRed } from '../api/client'
 import type { FormaPago } from '../api/types'
 import { formatoFecha, moneda } from '../lib/formato'
 import { confirmarCierre } from '../lib/modal'
@@ -27,6 +28,14 @@ import { useOrdenLocal, useOrdenServidor, type Accesores } from '../lib/orden'
 import { usePaginacion } from '../lib/usePaginacion'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
+import { useOffline } from '../offline/useOffline'
+import {
+  contarPendientes,
+  guardarCajaActiva,
+  guardarMovimientosCaja,
+  leerCatalogo,
+  leerMovimientosCaja,
+} from '../offline/almacen'
 
 // "Otro" se conserva en la base para el histórico, pero ya no se ofrece en la UI.
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
@@ -87,6 +96,13 @@ function Cifras({ efectivo, banco }: { efectivo: string; banco: string }) {
 export function Caja() {
   const navigate = useNavigate()
   const { tienePermiso } = useAuth()
+  const {
+    enLinea,
+    pendientes,
+    sincronizando,
+    version,
+    sincronizarAhora,
+  } = useOffline()
   const puedeOperar = tienePermiso('caja.operar')
   const puedeIngresar = tienePermiso('ingresos.crear')
   const [turno, setTurno] = useState<TurnoCaja | null>(null)
@@ -100,12 +116,43 @@ export function Caja() {
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas')
 
   const cargar = useCallback(async () => {
+    const cache = leerCatalogo()
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (cache?.caja?.abierta) {
+        setTurno(cache.caja)
+        setMovimientos(leerMovimientosCaja(cache.caja.id) ?? [])
+        setError(
+          'Sin conexión: mostrando la última información guardada de la caja.',
+        )
+      } else {
+        setError(
+          'Sin conexión y no hay una caja guardada. Abre la caja cuando tengas red.',
+        )
+      }
+      setCargando(false)
+      return
+    }
+
     try {
-      const activa = await obtenerCajaActiva()
+      const activa = await obtenerCajaActiva({ timeoutMs: 10_000 })
+      const movs = activa
+        ? await obtenerMovimientos(activa.id, { timeoutMs: 10_000 })
+        : []
       setTurno(activa)
-      setMovimientos(activa ? await obtenerMovimientos(activa.id) : [])
+      setMovimientos(movs)
+      guardarCajaActiva(activa)
+      if (activa) guardarMovimientosCaja(activa.id, movs)
+      setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar la caja')
+      if (esErrorRed(err) && cache?.caja?.abierta) {
+        setTurno(cache.caja)
+        setMovimientos(leerMovimientosCaja(cache.caja.id) ?? [])
+        setError(
+          'Sin conexión: mostrando la última información guardada de la caja.',
+        )
+      } else {
+        setError(err instanceof Error ? err.message : 'Error al cargar la caja')
+      }
     } finally {
       setCargando(false)
     }
@@ -114,6 +161,10 @@ export function Caja() {
   useEffect(() => {
     void cargar()
   }, [cargar])
+
+  useEffect(() => {
+    if (version > 0 && enLinea) void cargar()
+  }, [version, enLinea, cargar])
 
   const { entradas, salidas } = useMemo(() => {
     const ent: Record<Bucket, number> = { efectivo: 0, banco: 0 }
@@ -167,7 +218,12 @@ export function Caja() {
           <p className="ayuda">{turno ? `Turno #${turno.id} abierto` : 'Sin turno abierto'}</p>
         </div>
         <div className="acciones-fila">
-          <button className="boton boton--secundario" onClick={() => setHistModal(true)}>
+          <button
+            className="boton boton--secundario"
+            onClick={() => setHistModal(true)}
+            disabled={!enLinea}
+            title={enLinea ? undefined : 'El historial requiere conexión'}
+          >
             Historial de turnos
           </button>
           {turno ? (
@@ -176,23 +232,43 @@ export function Caja() {
                 <button
                   className="boton boton--secundario"
                   onClick={() => navigate('/ingresos?nuevo=1')}
+                  disabled={!enLinea}
                 >
                   Ingreso de inventario
                 </button>
               )}
               {puedeOperar && (
                 <>
-                  <button className="boton boton--secundario" onClick={() => setMovModal(true)}>
+                  <button
+                    className="boton boton--secundario"
+                    onClick={() => setMovModal(true)}
+                    disabled={!enLinea}
+                  >
                     Registrar movimiento
                   </button>
-                  <button className="boton boton--danger" onClick={() => setCerrarModal(true)}>
+                  <button
+                    className="boton boton--danger"
+                    onClick={() => setCerrarModal(true)}
+                    disabled={!enLinea || pendientes > 0}
+                    title={
+                      !enLinea
+                        ? 'No se puede cerrar la caja sin conexión'
+                        : pendientes > 0
+                          ? 'Sincroniza las operaciones pendientes antes de cerrar la caja'
+                          : undefined
+                    }
+                  >
                     Cerrar caja
                   </button>
                 </>
               )}
             </>
           ) : puedeOperar ? (
-            <button className="boton" onClick={() => setAbrirModal(true)}>
+            <button
+              className="boton"
+              onClick={() => setAbrirModal(true)}
+              disabled={!enLinea}
+            >
               Abrir caja
             </button>
           ) : null}
@@ -205,6 +281,27 @@ export function Caja() {
       />
 
       {error && <p className="error">{error}</p>}
+
+      {pendientes > 0 && (
+        <div className="aviso-offline aviso-offline--pendiente">
+          <div>
+            <strong>Hay {pendientes} operación(es) sin sincronizar.</strong>
+            <span>
+              {' '}
+              No cierres la caja hasta que se envíen; de lo contrario el cierre
+              quedaría incompleto.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="boton boton--mini"
+            disabled={!enLinea || sincronizando}
+            onClick={() => void sincronizarAhora()}
+          >
+            {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
+          </button>
+        </div>
+      )}
 
       {!turno ? (
         <Vacio
@@ -397,6 +494,7 @@ export function Caja() {
           turno={turno}
           esperadoEfectivo={esperadoEfectivo}
           esperadoBanco={esperadoBanco}
+          pendientesOffline={pendientes}
           onCerrar={() => setCerrarModal(false)}
           onGuardado={() => {
             setCerrarModal(false)
@@ -624,12 +722,14 @@ function FormCerrar({
   turno,
   esperadoEfectivo,
   esperadoBanco,
+  pendientesOffline,
   onCerrar,
   onGuardado,
 }: {
   turno: TurnoCaja
   esperadoEfectivo: number
   esperadoBanco: number
+  pendientesOffline: number
   onCerrar: () => void
   onGuardado: () => void
 }) {
@@ -678,6 +778,18 @@ function FormCerrar({
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+
+    // No cerrar con una cola pendiente: los totales esperados de la caja
+    // quedarían incompletos y el pago offline se registraría después del
+    // cierre. La cola debe vaciarse primero y luego se vuelve a abrir el modal
+    // para recalcular los saldos con los movimientos ya sincronizados.
+    if (contarPendientes() > 0) {
+      setError(
+        'Hay operaciones sin sincronizar. Cierra este cuadro, pulsa «Sincronizar ahora» y vuelve a abrir el cierre de caja.',
+      )
+      return
+    }
+
     if (eventualesSinPagar.length > 0) {
       setError(
         'Hay facturas de cliente eventual sin pagar. Asígnales un cliente o cóbralas antes de cerrar.',
@@ -711,6 +823,12 @@ function FormCerrar({
     <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Cerrar caja</h2>
+        {pendientesOffline > 0 && (
+          <p className="aviso">
+            Hay {pendientesOffline} operación(es) sin sincronizar. Sincronízalas y
+            vuelve a abrir este cuadro antes de cerrar la caja.
+          </p>
+        )}
         {error && <p className="error">{error}</p>}
         <div className="resumen">
           <div className="resumen__item">

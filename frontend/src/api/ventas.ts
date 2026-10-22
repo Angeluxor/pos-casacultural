@@ -40,6 +40,9 @@ export type Factura = {
   total: number
   saldo: number
   estado: EstadoFactura
+  origen: 'online' | 'offline'
+  requiere_revision: boolean
+  nota_revision: string | null
   motivo_anulacion: string | null
   fecha_anulacion: string | null
   anulada_por_id: number | null
@@ -50,7 +53,16 @@ export type Factura = {
 export type FacturaCreate = {
   cliente_id?: number | null
   nombre_eventual?: string | null
-  detalles: { producto_id: number; cantidad: number }[]
+  detalles: {
+    producto_id: number
+    cantidad: number
+    /** Precio cobrado en el dispositivo. Solo se usa en ventas offline. */
+    precio_unitario?: number
+  }[]
+  /** Campos de sincronización offline. */
+  fecha?: string
+  turno_caja_id?: number | null
+  origen_offline?: boolean
 }
 
 export type CrearFacturaOpciones = {
@@ -59,7 +71,10 @@ export type CrearFacturaOpciones = {
   timeoutMs?: number
 }
 
-export type PagarFacturaOpciones = CrearFacturaOpciones
+export type PagarFacturaOpciones = CrearFacturaOpciones & {
+  /** Turno en el que ocurrió el cobro offline. */
+  turnoId?: number
+}
 
 export type TotalesFacturas = {
   total_facturado: number
@@ -76,18 +91,23 @@ export type PaginaFacturas = Pagina<Factura> & {
 export type PagoCreate = {
   valor: number
   forma_pago: FormaPago
+  /** Fecha real del cobro offline. En online se omite. */
+  fecha?: string
 }
 
-export function listarFacturasPaginado(params: {
-  skip: number
-  limit: number
-  buscar?: string
-  desde?: string
-  hasta?: string
-  estado?: EstadoFactura | ''
-  orden?: string
-  direccion?: string
-}): Promise<PaginaFacturas> {
+export function listarFacturasPaginado(
+  params: {
+    skip: number
+    limit: number
+    buscar?: string
+    desde?: string
+    hasta?: string
+    estado?: EstadoFactura | ''
+    orden?: string
+    direccion?: string
+  },
+  timeoutMs?: number,
+): Promise<PaginaFacturas> {
   const q = new URLSearchParams()
   q.set('skip', String(params.skip))
   q.set('limit', String(params.limit))
@@ -97,7 +117,7 @@ export function listarFacturasPaginado(params: {
   if (params.estado) q.set('estado', params.estado)
   if (params.orden) q.set('orden', params.orden)
   if (params.direccion) q.set('direccion', params.direccion)
-  return apiFetch<PaginaFacturas>(`/api/facturas/?${q.toString()}`)
+  return apiFetch<PaginaFacturas>(`/api/facturas/?${q.toString()}`, { timeoutMs })
 }
 
 export function obtenerFactura(id: number): Promise<Factura> {
@@ -133,6 +153,9 @@ export function pagarFactura(
   const headers = new Headers()
   if (opciones.claveIdempotencia) {
     headers.set('Idempotency-Key', opciones.claveIdempotencia)
+  }
+  if (opciones.turnoId) {
+    headers.set('X-Turno-Caja-Id', String(opciones.turnoId))
   }
   return apiJson<Factura>(`/api/facturas/${id}/pagos`, 'POST', data, {
     headers,

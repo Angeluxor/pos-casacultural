@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   actualizarItemFactura,
   agregarItemFactura,
@@ -15,12 +15,13 @@ import {
 } from '../api/ventas'
 import { listarProductos, type Producto } from '../api/productos'
 import { listarClientes, type Cliente } from '../api/clientes'
-import type { FormaPago } from '../api/types'
+import { obtenerCajaActiva, type TurnoCaja } from '../api/caja'
+import type { FormaPago, UsuarioSesion } from '../api/types'
 import { AyudaContextual } from '../components/AyudaContextual'
 import { Paginacion } from '../components/Paginacion'
 import { Stepper } from '../components/Stepper'
 import { ThOrdenable } from '../components/ThOrdenable'
-import { ApiError } from '../api/client'
+import { ApiError, esErrorRed } from '../api/client'
 import { formatoFecha, moneda } from '../lib/formato'
 import { crearClaveIdempotencia } from '../lib/idempotencia'
 import { confirmarCierre } from '../lib/modal'
@@ -28,6 +29,21 @@ import { useOrdenServidor } from '../lib/orden'
 import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
+import { useOffline } from '../offline/useOffline'
+import {
+  aplicarStockPendiente,
+  encolarOperacion,
+  guardarCatalogo,
+  guardarFacturasCache,
+  leerCatalogo,
+  leerFacturasCache,
+  type OperacionOffline,
+} from '../offline/almacen'
+import {
+  crearOperacionPago,
+  crearOperacionVenta,
+  pagosDesdeLineas,
+} from '../offline/operaciones'
 import { FormCliente } from './Clientes'
 
 const FORMAS_PAGO: FormaPago[] = ['Efectivo', 'Transferencia', 'Tarjeta']
@@ -61,16 +77,49 @@ function claseEstado(estado: EstadoFactura): string {
 }
 
 export function Ventas() {
-  const { tienePermiso } = useAuth()
+  const { usuario, tienePermiso } = useAuth()
+  const {
+    enLinea,
+    operaciones,
+    pendientes,
+    sincronizando,
+    sincronizarAhora,
+    version,
+  } = useOffline()
   const puedeCrear = tienePermiso('ventas.crear')
   const puedeCobrar = tienePermiso('ventas.cobrar')
   const puedeEditar = tienePermiso('ventas.editar')
   const puedeAnular = tienePermiso('ventas.anular')
 
   const [estado, setEstado] = useState<EstadoFactura | ''>('')
+  const [listaDesdeCache, setListaDesdeCache] = useState(false)
   const cargarFacturas = useCallback(
-    (params: Parameters<typeof listarFacturasPaginado>[0]) =>
-      listarFacturasPaginado({ ...params, estado }),
+    async (params: Parameters<typeof listarFacturasPaginado>[0]) => {
+      const clave = JSON.stringify({ ...params, estado })
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const cache = leerFacturasCache(clave)
+        if (cache) {
+          setListaDesdeCache(true)
+          return cache.datos
+        }
+        throw new ApiError(0, 'Sin conexión y no hay una lista de ventas guardada.')
+      }
+      try {
+        const pagina = await listarFacturasPaginado({ ...params, estado }, 10_000)
+        guardarFacturasCache(clave, pagina)
+        setListaDesdeCache(false)
+        return pagina
+      } catch (err) {
+        if (esErrorRed(err)) {
+          const cache = leerFacturasCache(clave)
+          if (cache) {
+            setListaDesdeCache(true)
+            return cache.datos
+          }
+        }
+        throw err
+      }
+    },
     [estado],
   )
 
@@ -101,6 +150,10 @@ export function Ventas() {
 
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [productos, setProductos] = useState<Producto[]>([])
+  const [cajaActiva, setCajaActiva] = useState<TurnoCaja | null>(
+    () => leerCatalogo()?.caja ?? null,
+  )
+  const enLineaPrevia = useRef(enLinea)
   const [cargandoCatalogo, setCargandoCatalogo] = useState(true)
   const [errorCatalogo, setErrorCatalogo] = useState('')
   const [mensaje, setMensaje] = useState('')
@@ -111,15 +164,51 @@ export function Ventas() {
 
   const cargarCatalogo = useCallback(async () => {
     setCargandoCatalogo(true)
+    const cacheLeido = leerCatalogo()
+    // Un catálogo vacío puede ser solo la caja guardada por la página de Caja;
+    // no sirve para vender.
+    const cache =
+      cacheLeido && cacheLeido.productos.length > 0 ? cacheLeido : null
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (cache) {
+        setClientes(cache.clientes)
+        setProductos(cache.productos)
+        setCajaActiva(cache.caja)
+        setErrorCatalogo('')
+      } else {
+        setErrorCatalogo(
+          'Sin conexión y no hay un catálogo guardado en este dispositivo. Abre la app una vez con conexión.',
+        )
+      }
+      setCargandoCatalogo(false)
+      return
+    }
+
     try {
-      const [c, p] = await Promise.all([listarClientes(), listarProductos()])
+      const [c, p, caja] = await Promise.all([
+        listarClientes({ timeoutMs: 10_000 }),
+        listarProductos({ timeoutMs: 10_000 }),
+        obtenerCajaActiva({ timeoutMs: 10_000 }),
+      ])
       setClientes(c)
       setProductos(p)
+      setCajaActiva(caja)
+      guardarCatalogo({ productos: p, clientes: c, caja })
       setErrorCatalogo('')
     } catch (err) {
-      setErrorCatalogo(
-        err instanceof Error ? err.message : 'Error al cargar clientes y productos',
-      )
+      if (esErrorRed(err) && cache) {
+        setClientes(cache.clientes)
+        setProductos(cache.productos)
+        setCajaActiva(cache.caja)
+        setErrorCatalogo(
+          'Sin conexión: usando el catálogo guardado. Las ventas que registres quedarán pendientes de sincronizar.',
+        )
+      } else {
+        setErrorCatalogo(
+          err instanceof Error ? err.message : 'Error al cargar clientes y productos',
+        )
+      }
     } finally {
       setCargandoCatalogo(false)
     }
@@ -129,10 +218,34 @@ export function Ventas() {
     void cargarCatalogo()
   }, [cargarCatalogo])
 
+  // Después de una sincronización, el stock y el estado real de las facturas
+  // pueden haber cambiado en el servidor.
+  useEffect(() => {
+    if (version > 0 && enLinea) {
+      void cargarCatalogo()
+      recargar()
+    }
+  }, [version, enLinea, cargarCatalogo, recargar])
+
+  // Al recuperar la red también se refresca el catálogo aunque no hubiera
+  // operaciones pendientes: los precios y el stock pueden haber cambiado.
+  useEffect(() => {
+    const recuperada = enLinea && !enLineaPrevia.current
+    enLineaPrevia.current = enLinea
+    if (recuperada) {
+      void cargarCatalogo()
+      recargar()
+    }
+  }, [enLinea, cargarCatalogo, recargar])
+
   const agregarCliente = useCallback((c: Cliente) => {
     setClientes((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]))
   }, [])
 
+  const productosConPendientes = useMemo(
+    () => aplicarStockPendiente(productos, operaciones),
+    [productos, operaciones],
+  )
   const catalogoListo = !cargandoCatalogo && productos.length > 0
 
   return (
@@ -140,14 +253,23 @@ export function Ventas() {
       <header className="pagina__head">
         <div>
           <h1>Ventas</h1>
-          <p className="ayuda">{total} facturas</p>
+          <p className="ayuda">
+            {total} facturas
+            {pendientes > 0 ? ` · ${pendientes} pendiente(s) de sincronizar` : ''}
+          </p>
         </div>
         {puedeCrear && (
           <button
             className="boton"
             onClick={() => setNuevaAbierta(true)}
-            disabled={!catalogoListo}
-            title={catalogoListo ? undefined : 'Cargando catálogo…'}
+            disabled={!catalogoListo || (!enLinea && !cajaActiva?.abierta)}
+            title={
+              !catalogoListo
+                ? 'Cargando catálogo…'
+                : !enLinea && !cajaActiva?.abierta
+                  ? 'Para vender sin conexión necesitas una caja abierta guardada'
+                  : undefined
+            }
           >
             + Nueva venta
           </button>
@@ -158,6 +280,22 @@ export function Ventas() {
         titulo="Cómo registrar y cobrar"
         detalle="Crea facturas, cobra saldos y anula ventas. Para vender o cobrar debe haber una caja abierta. Una factura abierta se puede editar; al pagarse o pasar a crédito queda bloqueada. Anular devuelve el stock y exige un motivo."
       />
+
+      {pendientes > 0 && (
+        <OperacionesPendientes
+          operaciones={operaciones}
+          enLinea={enLinea}
+          sincronizando={sincronizando}
+          onSincronizar={() => void sincronizarAhora()}
+        />
+      )}
+
+      {listaDesdeCache && (
+        <p className="ayuda">
+          Sin conexión: mostrando la última lista de ventas guardada en este
+          dispositivo.
+        </p>
+      )}
 
       <div className="barra">
         <input
@@ -312,6 +450,14 @@ export function Ventas() {
                     </td>
                     <td data-label="Estado">
                       <span className={claseEstado(f.estado)}>{f.estado}</span>
+                      {f.requiere_revision && (
+                        <span
+                          className="badge badge--warn badge--revision"
+                          title={f.nota_revision ?? 'Venta offline para revisar'}
+                        >
+                          Revisar
+                        </span>
+                      )}
                     </td>
                     <td className="celda-accion">
                       <div className="acciones-fila">
@@ -355,14 +501,17 @@ export function Ventas() {
       {nuevaAbierta && (
         <FormVenta
           clientes={clientes}
-          productos={productos}
+          productos={productosConPendientes}
           catalogoListo={catalogoListo}
+          enLinea={enLinea}
+          turnoId={cajaActiva?.abierta ? cajaActiva.id : null}
+          usuario={usuario}
           onClienteCreado={agregarCliente}
           onCerrar={() => setNuevaAbierta(false)}
           onGuardado={(aviso) => {
             setNuevaAbierta(false)
             setMensaje(aviso ?? '')
-            recargar()
+            if (enLinea) recargar()
           }}
         />
       )}
@@ -370,23 +519,88 @@ export function Ventas() {
       {cobrar && (
         <FormCobro
           factura={cobrar}
-          productos={productos}
+          productos={productosConPendientes}
           clientes={clientes}
           puedeEditar={puedeEditar}
           puedeAnular={puedeAnular}
           modo={modoFactura}
+          enLinea={enLinea}
+          turnoId={cajaActiva?.abierta ? cajaActiva.id : null}
+          usuario={usuario}
           onCerrar={() => {
             setCobrar(null)
-            recargar()
+            if (enLinea) recargar()
           }}
-          onGuardado={() => {
+          onGuardado={(aviso) => {
             setCobrar(null)
-            setMensaje('')
-            recargar()
+            setMensaje(aviso ?? '')
+            if (enLinea) recargar()
           }}
         />
       )}
     </div>
+  )
+}
+
+function OperacionesPendientes({
+  operaciones,
+  enLinea,
+  sincronizando,
+  onSincronizar,
+}: {
+  operaciones: OperacionOffline[]
+  enLinea: boolean
+  sincronizando: boolean
+  onSincronizar: () => void
+}) {
+  return (
+    <section className="operaciones-pendientes">
+      <div className="operaciones-pendientes__head">
+        <div>
+          <strong>Operaciones guardadas sin conexión</strong>
+          <p className="ayuda">
+            Se enviarán al servidor cuando haya red. No cierres la caja hasta
+            que esta lista quede vacía.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="boton boton--mini"
+          onClick={onSincronizar}
+          disabled={!enLinea || sincronizando}
+        >
+          {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
+        </button>
+      </div>
+      <ul>
+        {operaciones.map((op) => {
+          const referencia = op.facturaId
+            ? `Factura #${op.facturaId}`
+            : `Ref. ${op.id.slice(0, 8)}`
+          const cobro = op.pagos.length > 0 ? ' · cobro incluido' : ''
+          return (
+            <li key={op.id} className={`operacion-pendiente operacion-pendiente--${op.estado}`}>
+              <div>
+                <strong>
+                  {op.tipo === 'venta' ? 'Venta' : 'Cobro'} {referencia}
+                  {cobro}
+                </strong>
+                <span>
+                  {formatoFecha(op.fecha)} · {moneda.format(op.total)} ·{' '}
+                  {op.usuarioNombre}
+                </span>
+                {op.estado === 'error' && op.ultimoError && (
+                  <small className="error">{op.ultimoError}</small>
+                )}
+              </div>
+              <span className="badge badge--warn">
+                {op.estado === 'error' ? 'Revisar' : 'Pendiente'}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
@@ -514,6 +728,9 @@ function FormVenta({
   clientes,
   productos,
   catalogoListo,
+  enLinea,
+  turnoId,
+  usuario,
   onClienteCreado,
   onCerrar,
   onGuardado,
@@ -521,6 +738,9 @@ function FormVenta({
   clientes: Cliente[]
   productos: Producto[]
   catalogoListo: boolean
+  enLinea: boolean
+  turnoId: number | null
+  usuario: UsuarioSesion | null
   onClienteCreado: (cliente: Cliente) => void
   onCerrar: () => void
   onGuardado: (aviso?: string) => void
@@ -540,13 +760,6 @@ function FormVenta({
   const [pagos, setPagos] = useState<LineaPago[]>([])
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
-  // Se conserva durante toda la vida del formulario para que un reintento
-  // después de un timeout recupere la venta en vez de duplicarla.
-  const [claveIdempotencia] = useState(() =>
-    crearClaveIdempotencia(),
-  )
-  // Clave propia del cobro: un timeout no puede duplicar el abono.
-  const [clavePago] = useState(() => crearClaveIdempotencia())
 
   const total = useMemo(
     () => items.reduce((acc, i) => acc + i.producto.precio * i.cantidad, 0),
@@ -640,16 +853,70 @@ function FormVenta({
       }
     }
     setGuardando(true)
+    if (!usuario) {
+      setError('No hay una sesión válida. Vuelve a iniciar sesión.')
+      setGuardando(false)
+      return
+    }
+
+    const detalles = items.map((i) => ({
+      productoId: i.producto.id,
+      codigo: i.producto.codigo,
+      nombre: i.producto.nombre,
+      cantidad: i.cantidad,
+      precioUnitario: i.producto.precio,
+    }))
+    const pagosOperacion = cobrarAhora ? pagosDesdeLineas(pagos) : []
+    const operacion = crearOperacionVenta({
+      usuarioId: usuario.id,
+      usuarioNombre: usuario.nombre || usuario.username,
+      turnoId,
+      clienteId: cliente?.id ?? null,
+      nombreEventual: cliente ? null : nombreEventual.trim() || null,
+      detalles,
+      pagos: pagosOperacion,
+      total: round2(total),
+    })
+
+    function guardarEnDispositivo(op: OperacionOffline = operacion): boolean {
+      if (op.tipo === 'venta' && !turnoId) {
+        setError(
+          'Necesitas una caja abierta para vender sin conexión. Ábrela cuando tengas red y vuelve a intentarlo.',
+        )
+        return false
+      }
+      if (!encolarOperacion(op)) {
+        setError(
+          'No se pudo guardar la operación en este dispositivo (almacenamiento lleno o bloqueado). No se registró nada.',
+        )
+        return false
+      }
+      return true
+    }
+
+    if (!enLinea || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      if (guardarEnDispositivo()) {
+        onGuardado(
+          'Venta guardada en el dispositivo. Se sincronizará automáticamente cuando vuelva la conexión.',
+        )
+      }
+      setGuardando(false)
+      return
+    }
+
     const datos = {
-      cliente_id: cliente ? cliente.id : null,
-      nombre_eventual: cliente ? null : nombreEventual.trim() || null,
-      detalles: items.map((i) => ({ producto_id: i.producto.id, cantidad: i.cantidad })),
+      cliente_id: operacion.clienteId,
+      nombre_eventual: operacion.nombreEventual,
+      detalles: items.map((i) => ({
+        producto_id: i.producto.id,
+        cantidad: i.cantidad,
+      })),
     }
     try {
       let factura: Factura
       try {
         factura = await crearFactura(datos, {
-          claveIdempotencia,
+          claveIdempotencia: operacion.claveVenta,
           timeoutMs: 30_000,
         })
       } catch (err) {
@@ -658,7 +925,7 @@ function FormVenta({
         // backend devuelve la factura original sin descontar stock otra vez.
         if (errorReintentable(err)) {
           factura = await crearFactura(datos, {
-            claveIdempotencia,
+            claveIdempotencia: operacion.claveVenta,
             timeoutMs: 30_000,
           })
         } else {
@@ -673,10 +940,39 @@ function FormVenta({
         try {
           await registrarPagoConReintento(
             factura.id,
-            pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
-            clavePago,
+            pagosOperacion.map((p) => ({ valor: p.valor, forma_pago: p.formaPago })),
+            operacion.clavePago,
           )
         } catch (err) {
+          if (esErrorRed(err)) {
+            const ahora = new Date().toISOString()
+            const pagoPendiente: OperacionOffline = {
+              ...operacion,
+              id: crearClaveIdempotencia(),
+              tipo: 'pago',
+              creadaEn: ahora,
+              fecha: ahora,
+              facturaId: factura.id,
+              detalles: [],
+              total: round2(
+                pagosOperacion.reduce((acc, p) => acc + p.valor, 0),
+              ),
+              estado: 'pendiente',
+              intentos: 0,
+              ultimoError: null,
+              pagoRegistrado: false,
+            }
+            if (guardarEnDispositivo(pagoPendiente)) {
+              onGuardado(
+                `Venta #${factura.id} registrada. El cobro quedó guardado en el dispositivo y se sincronizará al volver la conexión.`,
+              )
+            } else {
+              onGuardado(
+                `La venta #${factura.id} quedó registrada, pero el cobro no se pudo guardar en el dispositivo. Cobra el saldo desde la lista cuando tengas conexión.`,
+              )
+            }
+            return
+          }
           const msg = err instanceof Error ? err.message : 'error desconocido'
           const motivo =
             err instanceof ApiError && err.timeout
@@ -690,10 +986,12 @@ function FormVenta({
       }
       onGuardado()
     } catch (err) {
-      if (err instanceof ApiError && err.timeout) {
-        setError(
-          'No pudimos confirmar la venta por un problema de conexión. Antes de volver a registrarla, revisa la lista de ventas: puede que ya esté guardada.',
-        )
+      if (esErrorRed(err)) {
+        if (guardarEnDispositivo()) {
+          onGuardado(
+            'Sin conexión: la venta quedó guardada en el dispositivo y se sincronizará cuando vuelva la red.',
+          )
+        }
       } else {
         setError(err instanceof Error ? err.message : 'Error al registrar la venta')
       }
@@ -800,6 +1098,12 @@ function FormVenta({
                   type="button"
                   className="boton boton--mini boton--secundario"
                   onClick={() => setCreandoCliente(true)}
+                  disabled={!enLinea}
+                  title={
+                    enLinea
+                      ? undefined
+                      : 'Crear clientes requiere conexión. Puedes vender con un cliente existente o como eventual.'
+                  }
                 >
                   Crear cliente
                 </button>
@@ -980,6 +1284,9 @@ function FormCobro({
   puedeEditar,
   puedeAnular,
   modo,
+  enLinea,
+  turnoId,
+  usuario,
   onCerrar,
   onGuardado,
 }: {
@@ -989,8 +1296,11 @@ function FormCobro({
   puedeEditar: boolean
   puedeAnular: boolean
   modo: 'ver' | 'pagar'
+  enLinea: boolean
+  turnoId: number | null
+  usuario: UsuarioSesion | null
   onCerrar: () => void
-  onGuardado: () => void
+  onGuardado: (aviso?: string) => void
 }) {
   const [f, setF] = useState<Factura>(factura)
   const [monto, setMonto] = useState(String(factura.saldo))
@@ -1000,9 +1310,6 @@ function FormCobro({
   const [buscar, setBuscar] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
-  // Se conserva mientras el formulario esté abierto: si el cobro se guardó
-  // pero la respuesta se perdió, el reintento devuelve la misma factura.
-  const [clavePago] = useState(() => crearClaveIdempotencia())
   const [ocupado, setOcupado] = useState(false)
   const [anulando, setAnulando] = useState(false)
   const [mostrandoAnular, setMostrandoAnular] = useState(false)
@@ -1014,8 +1321,8 @@ function FormCobro({
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const esPago = modo === 'pagar'
   const facturaAbierta = f.estado !== 'Anulada'
-  const editable = facturaAbierta && modo === 'ver' && puedeEditar
-  const puedeAnularAqui = facturaAbierta && modo === 'ver' && puedeAnular
+  const editable = facturaAbierta && modo === 'ver' && puedeEditar && enLinea
+  const puedeAnularAqui = facturaAbierta && modo === 'ver' && puedeAnular && enLinea
   const puedePagar = facturaAbierta && modo === 'pagar' && f.saldo > 0
   const activos = f.detalles.filter((d) => !d.anulado)
   const unaSolaLinea = activos.length <= 1
@@ -1093,15 +1400,63 @@ function FormCobro({
       setError('La suma de los medios de pago debe coincidir con el monto del pago')
       return
     }
+    if (!usuario) {
+      setError('No hay una sesión válida. Vuelve a iniciar sesión.')
+      return
+    }
+
+    const pagosOperacion = pagosDesdeLineas(pagos)
+    const operacion = crearOperacionPago({
+      usuarioId: usuario.id,
+      usuarioNombre: usuario.nombre || usuario.username,
+      turnoId,
+      facturaId: f.id,
+      pagos: pagosOperacion,
+      total: round2(valor),
+    })
+
+    function guardarEnDispositivo(): boolean {
+      if (!encolarOperacion(operacion)) {
+        setError(
+          'No se pudo guardar el cobro en este dispositivo (almacenamiento lleno o bloqueado). No se registró nada.',
+        )
+        return false
+      }
+      return true
+    }
+
+    if (!enLinea || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      if (!turnoId) {
+        setError(
+          'Necesitas una caja abierta para cobrar sin conexión. Ábrela cuando tengas red y vuelve a intentarlo.',
+        )
+        return
+      }
+      if (guardarEnDispositivo()) {
+        onGuardado(
+          `Cobro de ${moneda.format(valor)} guardado en el dispositivo. Se sincronizará al volver la conexión.`,
+        )
+      }
+      return
+    }
+
     setGuardando(true)
     try {
       await registrarPagoConReintento(
         f.id,
-        pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
-        clavePago,
+        pagosOperacion.map((p) => ({ valor: p.valor, forma_pago: p.formaPago })),
+        operacion.clavePago,
       )
       onGuardado()
     } catch (err) {
+      if (esErrorRed(err)) {
+        if (guardarEnDispositivo()) {
+          onGuardado(
+            `No se confirmó el cobro por la conexión. Quedó guardado en el dispositivo y se sincronizará automáticamente.`,
+          )
+        }
+        return
+      }
       if (err instanceof ApiError && err.timeout) {
         setError(
           'No pudimos confirmar el pago por un problema de conexión. Revisa la factura en la lista antes de reintentar: puede que ya esté registrado.',
@@ -1170,6 +1525,18 @@ function FormCobro({
     <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>{esPago ? `Registrar pago · Factura #${f.id}` : `Factura #${f.id}`}</h2>
+        {!enLinea && (
+          <p className="aviso">
+            Sin conexión: el cobro se guardará en este dispositivo. Editar o
+            anular la factura requiere conexión.
+          </p>
+        )}
+        {f.requiere_revision && (
+          <p className="error">
+            Venta marcada para revisión:{' '}
+            {f.nota_revision ?? 'requiere revisión manual.'}
+          </p>
+        )}
         <p className="ayuda">
           {formatoFecha(f.fecha)} · Total {moneda.format(f.total)} · Pagado {moneda.format(pagado)}{' '}
           · Saldo {moneda.format(f.saldo)}{' '}
@@ -1192,6 +1559,7 @@ function FormCobro({
 
         <p className="ayuda">Cliente: {f.cliente_nombre || '—'}</p>
         {facturaAbierta &&
+          enLinea &&
           (asignando ? (
             <div className="buscador-producto">
               <input

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { APP_VERSION } from '../lib/version'
+import { useOffline } from '../offline/useOffline'
 import { FeedbackWidget } from './FeedbackWidget'
 
 type Enlace = { to: string; label: string; end?: boolean; permiso: string }
@@ -24,6 +25,13 @@ const enlaces: Enlace[] = [
 
 export function Layout() {
   const { usuario, logout, tienePermiso } = useAuth()
+  const {
+    enLinea,
+    pendientes,
+    sincronizando,
+    ultimoError,
+    sincronizarAhora,
+  } = useOffline()
   const navigate = useNavigate()
   const location = useLocation()
   const [menuAbierto, setMenuAbierto] = useState(false)
@@ -41,6 +49,14 @@ export function Layout() {
   }, [])
 
   function salir() {
+    if (pendientes > 0) {
+      const seguir = window.confirm(
+        `Hay ${pendientes} operación(es) sin sincronizar. Si cierras sesión, ` +
+          'deberás volver a entrar con el mismo usuario y con conexión para ' +
+          'enviarlas. ¿Cerrar sesión de todos modos?',
+      )
+      if (!seguir) return
+    }
     logout()
     navigate('/login', { replace: true })
   }
@@ -121,6 +137,40 @@ export function Layout() {
       </aside>
 
       <main className="contenido">
+        {(!enLinea || pendientes > 0) && (
+          <div
+            className={
+              enLinea
+                ? 'aviso-offline aviso-offline--pendiente'
+                : 'aviso-offline aviso-offline--sin-red'
+            }
+            role="status"
+          >
+            <div>
+              <strong>
+                {enLinea
+                  ? `${pendientes} operación(es) pendiente(s) de sincronizar`
+                  : 'Sin conexión'}
+              </strong>
+              <span>
+                {enLinea
+                  ? ' Se enviarán automáticamente al recuperar la conexión.'
+                  : ' Puedes seguir vendiendo: las operaciones se guardan en este dispositivo.'}
+              </span>
+              {ultimoError && <small className="aviso-offline__error">{ultimoError}</small>}
+            </div>
+            {pendientes > 0 && (
+              <button
+                type="button"
+                className="boton boton--mini"
+                disabled={sincronizando || !enLinea}
+                onClick={() => void sincronizarAhora()}
+              >
+                {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
+              </button>
+            )}
+          </div>
+        )}
         <Outlet />
       </main>
 

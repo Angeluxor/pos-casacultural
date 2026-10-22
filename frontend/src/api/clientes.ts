@@ -35,8 +35,12 @@ export type ClienteFusionResultado = {
   clientes_eliminados: number
 }
 
-export async function listarClientes(): Promise<Cliente[]> {
-  const r = await apiFetch<Pagina<Cliente>>('/api/clientes/?limit=1000')
+export async function listarClientes(
+  opciones: { timeoutMs?: number } = {},
+): Promise<Cliente[]> {
+  const r = await apiFetch<Pagina<Cliente>>('/api/clientes/?limit=1000', {
+    timeoutMs: opciones.timeoutMs,
+  })
   return r.items
 }
 

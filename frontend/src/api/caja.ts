@@ -89,9 +89,13 @@ export function esFormaBanco(forma_pago: FormaPago): boolean {
   return FORMAS_BANCO.includes(forma_pago)
 }
 
-export async function obtenerCajaActiva(): Promise<TurnoCaja | null> {
+export async function obtenerCajaActiva(
+  opciones: { timeoutMs?: number } = {},
+): Promise<TurnoCaja | null> {
   try {
-    return await apiFetch<TurnoCaja>('/api/caja/activa')
+    return await apiFetch<TurnoCaja>('/api/caja/activa', {
+      timeoutMs: opciones.timeoutMs,
+    })
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null
     throw err
@@ -110,8 +114,13 @@ export function registrarMovimiento(data: MovimientoCajaCreate): Promise<Registr
   return apiJson<RegistroCaja>('/api/caja/movimientos', 'POST', data)
 }
 
-export function obtenerMovimientos(turnoId: number): Promise<RegistroCaja[]> {
-  return apiFetch<RegistroCaja[]>(`/api/caja/${turnoId}/movimientos`)
+export function obtenerMovimientos(
+  turnoId: number,
+  opciones: { timeoutMs?: number } = {},
+): Promise<RegistroCaja[]> {
+  return apiFetch<RegistroCaja[]>(`/api/caja/${turnoId}/movimientos`, {
+    timeoutMs: opciones.timeoutMs,
+  })
 }
 
 export type FacturaPendienteCierre = {

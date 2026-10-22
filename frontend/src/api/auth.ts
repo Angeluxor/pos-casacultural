@@ -9,8 +9,12 @@ export async function iniciarSesion(username: string, password: string): Promise
   setToken(data.access_token)
 }
 
-export async function obtenerUsuarioActual(): Promise<UsuarioSesion> {
-  return apiFetch<UsuarioSesion>('/api/auth/me')
+export async function obtenerUsuarioActual(
+  opciones: { timeoutMs?: number } = {},
+): Promise<UsuarioSesion> {
+  return apiFetch<UsuarioSesion>('/api/auth/me', {
+    timeoutMs: opciones.timeoutMs,
+  })
 }
 
 export function actualizarPerfil(data: PerfilUpdate): Promise<Usuario> {
