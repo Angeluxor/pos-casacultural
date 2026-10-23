@@ -13,6 +13,13 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ### Añadido
 
+- **Saldo inicial de bolsillos**: al crear un bolsillo (o después, con «Saldo
+  inicial») se puede registrar dinero que ya estaba apartado. Suma al reservado
+  pero no se descuenta del efectivo/banco; los aportes posteriores sí. El
+  historial distingue los movimientos iniciales.
+- **Forma de pago en el listado de ventas**: la tabla muestra el medio (o los
+  medios combinados) de los pagos de cada factura, y «Crédito» cuando aún no
+  tiene pagos.
 - **Modo offline (Fase 1)**: la app se puede instalar como PWA y abrir sin red.
   Se guardan localmente la sesión (12 h), el catálogo de productos/clientes, la
   caja activa y la última lista de ventas. Las ventas y los cobros creados sin
@@ -31,9 +38,14 @@ internos de desarrollo; no existen tags publicados de esas versiones.
   pagos conservan la fecha y el turno en que se recibieron.
 - Migración `0020_metadatos_offline` para `facturas.origen`,
   `facturas.requiere_revision`, `facturas.nota_revision` y su índice.
+- Migración `0021_saldo_inicial_bolsillos` para
+  `bolsillo_movimientos.es_inicial`.
 
 ### Corregido
 
+- **Detalle de ingresos mostraba «Producto #8»**: las líneas de un ingreso
+  ahora incluyen `producto_nombre` y el detalle muestra el nombre real del
+  producto en lugar de su id.
 - **Ventas que se quedaban en «Guardando…»**: la factura sí se guardaba, pero
   si la respuesta se perdía (red móvil, timeout o cold start de Render) la UI
   esperaba indefinidamente y el cajero no sabía si la venta había quedado

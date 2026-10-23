@@ -26,6 +26,7 @@ export type IngresoItem = {
   tipo: TipoItemIngreso
   producto_id: number | null
   concepto: string | null
+  producto_nombre: string | null
   cantidad: number | null
   cantidad_formatos: number | null
   unidades_por_formato: number | null

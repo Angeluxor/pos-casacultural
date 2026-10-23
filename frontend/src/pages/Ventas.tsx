@@ -22,7 +22,7 @@ import { Paginacion } from '../components/Paginacion'
 import { Stepper } from '../components/Stepper'
 import { ThOrdenable } from '../components/ThOrdenable'
 import { ApiError, esErrorRed } from '../api/client'
-import { formatoFecha, moneda } from '../lib/formato'
+import { formatoFecha, formasPagoUnicas, moneda } from '../lib/formato'
 import { crearClaveIdempotencia } from '../lib/idempotencia'
 import { confirmarCierre } from '../lib/modal'
 import { useOrdenServidor } from '../lib/orden'
@@ -59,6 +59,21 @@ const MOTIVOS_ANULACION = [
 
 function contactoSecundario(c: Cliente): string {
   return c.celular || c.correo || ''
+}
+
+function formaPagoFactura(f: Factura): string {
+  const formas = formasPagoUnicas(f.pagos)
+  if (formas === '—' && f.estado === 'Crédito') return 'Crédito'
+  return formas
+}
+
+function detalleFormasPago(f: Factura): string {
+  if (f.pagos.length === 0) {
+    return f.estado === 'Crédito' ? 'Venta a crédito, pago pendiente' : 'Sin pagos registrados'
+  }
+  return f.pagos
+    .map((p) => `${p.forma_pago}: ${moneda.format(p.valor)}`)
+    .join(' · ')
 }
 
 function claseEstado(estado: EstadoFactura): string {
@@ -412,6 +427,7 @@ export function Ventas() {
                   <ThOrdenable campo="cliente" orden={orden} direccion={direccion} onOrdenar={alternar}>
                     Cliente
                   </ThOrdenable>
+                  <th>Forma de pago</th>
                   <ThOrdenable
                     campo="total"
                     orden={orden}
@@ -442,6 +458,9 @@ export function Ventas() {
                     <td data-label="Factura">#{f.id}</td>
                     <td data-label="Fecha">{formatoFecha(f.fecha)}</td>
                     <td data-label="Cliente">{f.cliente_nombre || '—'}</td>
+                    <td data-label="Forma de pago" title={detalleFormasPago(f)}>
+                      {formaPagoFactura(f)}
+                    </td>
                     <td data-label="Total" className="derecha">
                       {moneda.format(f.total)}
                     </td>

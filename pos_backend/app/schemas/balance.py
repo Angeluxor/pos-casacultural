@@ -46,10 +46,14 @@ class CuentaPorPagar(BaseModel):
 class BalanceActivos(BaseModel):
     efectivo: float
     banco: float
-    # Parte de efectivo + banco que está apartada en bolsillos. No se suma dos
-    # veces al total de activos: el dinero sigue existiendo, solo no está
-    # disponible para la operación diaria.
+    # Saldo total apartado en bolsillos. Incluye el saldo inicial, que no salió
+    # de efectivo/banco. No se suma dos veces al total de activos: el dinero
+    # sigue existiendo, solo no está disponible para la operación diaria.
     reservado: float
+    # Parte del reservado que corresponde a saldos iniciales (no descuenta caja).
+    reservado_inicial: float = 0.0
+    # Parte del reservado que sí salió de efectivo/banco.
+    reservado_caja: float = 0.0
     disponible: float
     inventario: float
     cartera: float

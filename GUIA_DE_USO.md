@@ -324,7 +324,7 @@ El **Balance** es una foto del negocio en el momento de la consulta. Está en el
 
 - **Activos**:
   - **Efectivo** y **Banco**: saldo esperado del turno de caja abierto. Si no hay turno abierto, se usan los saldos reales del último cierre. Incluyen el dinero apartado en bolsillos.
-  - **Reservado en bolsillos**: parte de efectivo + banco que está apartada para gastos vitales.
+  - **Reservado en bolsillos**: dinero apartado para gastos vitales. Incluye los saldos iniciales, que no se descontaron de efectivo/banco.
   - **Disponible para operación**: efectivo + banco menos lo reservado. Es la liquidez que queda para el día a día.
   - **Inventario**: stock valorizado al **costo vigente** del producto. El costo vigente es el promedio ponderado de las compras; si hay un **costo manual** más reciente, ese manda; y si el producto tiene **receta**, se usa el costo calculado de sus insumos (ver sección 11). Si un producto nunca tuvo costo, se valoriza a **precio de venta** y el sistema lo marca como respaldo.
   - **Cartera por cobrar**: saldo pendiente de las facturas no anuladas.
@@ -355,15 +355,16 @@ La tabla **Cuentas por pagar** lista las compras a crédito pendientes, sin impo
 Un **bolsillo** es una marca virtual para apartar una parte del efectivo/banco y reservarla para un gasto vital, por ejemplo el **arriendo**. No es una cuenta nueva ni una salida de dinero: el efectivo sigue en la caja y en el total de activos, pero deja de contar como **disponible para operación**.
 
 1. En **Balance**, sección **Bolsillos de gastos vitales**, presiona **+ Nuevo bolsillo**.
-2. Escribe un **nombre** (por ejemplo `Arriendo`) y una descripción opcional.
+2. Escribe un **nombre** (por ejemplo `Arriendo`), una descripción opcional y, si ya tenías dinero apartado, un **saldo inicial**. Ese saldo suma al bolsillo pero **no se descuenta del banco**.
 3. En la fila del bolsillo, presiona **Aportar** e indica cuánto quieres apartar. El sistema no permite apartar más de lo que hay disponible en efectivo + banco.
-4. Cuando necesites usar el dinero, presiona **Liberar** para devolverlo a la liquidez disponible. No se puede liberar más de lo reservado.
-5. **Historial** muestra cada aporte, retiro, monto, nota y usuario.
-6. **Archivar** oculta el bolsillo de la lista, pero solo si su saldo es cero; el historial se conserva.
+4. Si el bolsillo ya existía y necesitas registrar su saldo inicial, usa **Saldo inicial** en la fila. No se descuenta de la caja/banco.
+5. Cuando necesites usar el dinero, presiona **Liberar** para devolverlo a la liquidez disponible. No se puede liberar más de lo reservado.
+6. **Historial** muestra cada aporte, retiro, monto, nota y usuario; los saldos iniciales aparecen marcados como **Inicial**.
+7. **Archivar** oculta el bolsillo de la lista, pero solo si su saldo es cero; el historial se conserva.
 
 Para pagar el arriendo, el orden recomendado es: **liberar** el valor del bolsillo y luego registrar la **salida real** en **Caja** con categoría **Arriendo**. Así el gasto queda en el estado de resultados y el bolsillo no sigue mostrando ese dinero como reservado.
 
-> Los bolsillos **no cambian el total de activos ni la utilidad**. Solo reducen el **disponible** y aumentan el **reservado**. No se puede apartar más que el efectivo + banco actual. Si al pagar un gasto no liberas el bolsillo, el sistema no lo detecta automáticamente: el bolsillo seguiría con saldo.
+> Los bolsillos **no cambian el total de activos ni la utilidad**. Los aportes normales reducen el **disponible** y aumentan el **reservado**; el saldo inicial solo aumenta el reservado, porque representa ahorros que ya existían antes de usar la app. No se puede apartar más que el efectivo + banco actual. Si al pagar un gasto no liberas el bolsillo, el sistema no lo detecta automáticamente: el bolsillo seguiría con saldo.
 
 > El costo de ventas y el inventario usan el **costo vigente** de cada producto: promedio de compras, costo manual más reciente o costo de la **receta** si es una preparación. Es una aproximación operativa: el sistema no lleva capas de costo por lote ni contabilidad de partida doble.
 

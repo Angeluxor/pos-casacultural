@@ -294,8 +294,12 @@ def calcular_balance(
 ) -> BalanceGeneral:
     caja = crud_caja.saldos_actuales(db)
     total_reservado, items_bolsillos = bolsillos.resumen_bolsillos(db)
+    reservado_inicial = bolsillos.total_saldo_inicial(db)
+    reservado_caja = round(total_reservado - reservado_inicial, 2)
+    # El saldo inicial de un bolsillo ya estaba apartado antes de usar la app:
+    # suma al reservado, pero no se descuenta del efectivo/banco.
     disponible = round(
-        float(caja["efectivo"]) + float(caja["banco"]) - total_reservado, 2
+        float(caja["efectivo"]) + float(caja["banco"]) - reservado_caja, 2
     )
     saldos_caja = SaldosCaja(
         **caja, reservado=total_reservado, disponible=disponible
@@ -326,6 +330,8 @@ def calcular_balance(
         efectivo=efectivo,
         banco=banco,
         reservado=total_reservado,
+        reservado_inicial=reservado_inicial,
+        reservado_caja=reservado_caja,
         disponible=disponible,
         inventario=inventario_total,
         cartera=cartera,

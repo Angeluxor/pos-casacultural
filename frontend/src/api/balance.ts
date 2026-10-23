@@ -35,6 +35,7 @@ export type BolsilloBalance = {
   nombre: string
   descripcion: string | null
   reservado: number
+  saldo_inicial: number
   fecha_creacion: string
 }
 
@@ -45,6 +46,7 @@ export type BolsilloMovimiento = {
   tipo: 'Aporte' | 'Retiro'
   monto: number
   nota: string | null
+  es_inicial: boolean
   usuario_id: number | null
   usuario_nombre: string | null
 }
@@ -53,6 +55,8 @@ export type BalanceActivos = {
   efectivo: number
   banco: number
   reservado: number
+  reservado_inicial: number
+  reservado_caja: number
   disponible: number
   inventario: number
   cartera: number
@@ -124,13 +128,19 @@ export async function descargarBalance(
 export function crearBolsillo(datos: {
   nombre: string
   descripcion?: string
+  saldo_inicial?: number
 }): Promise<BolsilloBalance> {
   return apiJson<BolsilloBalance>('/api/balance/bolsillos', 'POST', datos)
 }
 
 export function registrarMovimientoBolsillo(
   bolsilloId: number,
-  datos: { tipo: 'Aporte' | 'Retiro'; monto: number; nota?: string },
+  datos: {
+    tipo: 'Aporte' | 'Retiro'
+    monto: number
+    nota?: string
+    es_inicial?: boolean
+  },
 ): Promise<BolsilloMovimiento> {
   return apiJson<BolsilloMovimiento>(
     `/api/balance/bolsillos/${bolsilloId}/movimientos`,

@@ -20,7 +20,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session, contains_eager, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.core.orden import ordenar
@@ -165,7 +165,12 @@ def _calcular_estado(items, total: float) -> EstadoIngreso:
 def _obtener_o_404(db: Session, ingreso_id: int) -> IngresoInventario:
     ingreso = (
         db.query(IngresoInventario)
-        .options(joinedload(IngresoInventario.proveedor_rel))
+        .options(
+            joinedload(IngresoInventario.proveedor_rel),
+            selectinload(IngresoInventario.items).joinedload(
+                IngresoInventarioItem.producto
+            ),
+        )
         .filter(IngresoInventario.id == ingreso_id)
         .first()
     )
@@ -788,7 +793,12 @@ def obtener_ingresos(
     query = (
         db.query(IngresoInventario)
         .outerjoin(Proveedor, IngresoInventario.proveedor_id == Proveedor.id)
-        .options(contains_eager(IngresoInventario.proveedor_rel))
+        .options(
+            contains_eager(IngresoInventario.proveedor_rel),
+            selectinload(IngresoInventario.items).joinedload(
+                IngresoInventarioItem.producto
+            ),
+        )
     )
     if desde:
         try:

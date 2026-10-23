@@ -158,12 +158,14 @@ def crear_bolsillo(
         nombre=datos.nombre,
         descripcion=datos.descripcion,
         usuario_id=current_user.id,
+        saldo_inicial=datos.saldo_inicial,
     )
     return BolsilloBalance(
         id=bolsillo.id,
         nombre=bolsillo.nombre,
         descripcion=bolsillo.descripcion,
-        reservado=0.0,
+        reservado=round(float(datos.saldo_inicial or 0.0), 2),
+        saldo_inicial=round(float(datos.saldo_inicial or 0.0), 2),
         fecha_creacion=bolsillo.fecha_creacion,
     )
 
@@ -185,6 +187,7 @@ def registrar_movimiento_bolsillo(
         monto=datos.monto,
         nota=datos.nota,
         usuario_id=current_user.id,
+        es_inicial=datos.es_inicial,
     )
 
 

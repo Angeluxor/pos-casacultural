@@ -47,6 +47,8 @@ class IngresoItemResponse(BaseModel):
     tipo: TipoItemIngreso
     producto_id: Optional[int]
     concepto: Optional[str]
+    # Nombre del producto existente para no mostrar «Producto #8» en el detalle.
+    producto_nombre: Optional[str] = None
     cantidad: Optional[int]
     cantidad_formatos: Optional[int] = None
     unidades_por_formato: Optional[int] = None

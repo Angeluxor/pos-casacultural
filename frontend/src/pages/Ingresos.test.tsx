@@ -126,6 +126,7 @@ describe('Ingresos', () => {
           tipo: 'Producto',
           producto_id: 7,
           concepto: null,
+          producto_nombre: 'Harina',
           cantidad: 10,
           cantidad_formatos: null,
           unidades_por_formato: null,
@@ -157,6 +158,10 @@ describe('Ingresos', () => {
     )
 
     await user.click(await screen.findByRole('button', { name: 'Ver' }))
+    // El detalle usa el nombre del producto, no un «Producto #id».
+    expect(await screen.findByText('Harina')).toBeInTheDocument()
+    expect(screen.queryByText('Producto #7')).not.toBeInTheDocument()
+
     await user.selectOptions(screen.getByLabelText('Forma de pago'), 'Transferencia')
     await user.click(screen.getByRole('button', { name: 'Guardar cambios' }))
 

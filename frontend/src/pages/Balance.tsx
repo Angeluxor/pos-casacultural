@@ -165,6 +165,7 @@ function TablaBolsillos({
   disponible,
   puedeGestionar,
   onAportar,
+  onSaldoInicial,
   onLiberar,
   onHistorial,
   onArchivar,
@@ -173,6 +174,7 @@ function TablaBolsillos({
   disponible: number
   puedeGestionar: boolean
   onAportar: (bolsillo: BolsilloBalance) => void
+  onSaldoInicial: (bolsillo: BolsilloBalance) => void
   onLiberar: (bolsillo: BolsilloBalance) => void
   onHistorial: (bolsillo: BolsilloBalance) => void
   onArchivar: (bolsillo: BolsilloBalance) => void
@@ -208,11 +210,24 @@ function TablaBolsillos({
               <td data-label="Descripción">{b.descripcion ?? '—'}</td>
               <td data-label="Reservado" className="derecha">
                 {moneda.format(b.reservado)}
+                {b.saldo_inicial > 0 && (
+                  <div className="ayuda">
+                    Incluye inicial {moneda.format(b.saldo_inicial)}
+                  </div>
+                )}
               </td>
               <td className="celda-accion">
                 <div className="acciones-fila">
                   {puedeGestionar && (
                     <>
+                      <button
+                        type="button"
+                        className="boton boton--mini boton--secundario"
+                        onClick={() => onSaldoInicial(b)}
+                        title="Registrar un saldo que ya existía sin descontarlo del banco"
+                      >
+                        Saldo inicial
+                      </button>
                       <button
                         type="button"
                         className="boton boton--mini"
@@ -282,6 +297,7 @@ function FormBolsillo({
 }) {
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
+  const [saldoInicial, setSaldoInicial] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
@@ -292,11 +308,17 @@ function FormBolsillo({
       setError('El nombre del bolsillo es obligatorio')
       return
     }
+    const inicial = Number(saldoInicial)
+    if (saldoInicial.trim() && (!Number.isFinite(inicial) || inicial < 0)) {
+      setError('El saldo inicial debe ser un número mayor o igual a 0')
+      return
+    }
     setGuardando(true)
     try {
       await crearBolsillo({
         nombre: nombre.trim(),
         descripcion: descripcion.trim() || undefined,
+        saldo_inicial: inicial > 0 ? inicial : undefined,
       })
       onGuardado()
     } catch (err) {
@@ -311,8 +333,9 @@ function FormBolsillo({
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>Nuevo bolsillo</h2>
         <p className="ayuda">
-          Un bolsillo aparta una parte del efectivo/banco para un gasto vital. El dinero
-          sigue en la caja: solo deja de contar como disponible.
+          Un bolsillo aparta dinero para un gasto vital. El saldo inicial no se
+          descuenta del banco; los aportes posteriores sí dejan de contar como
+          disponible.
         </p>
         {error && <p className="error">{error}</p>}
         <label>
@@ -334,6 +357,21 @@ function FormBolsillo({
             maxLength={300}
           />
         </label>
+        <label>
+          Saldo inicial (opcional)
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={saldoInicial}
+            onChange={(e) => setSaldoInicial(e.target.value)}
+            placeholder="Ej.: 200000"
+          />
+        </label>
+        <p className="ayuda">
+          El saldo inicial se suma al bolsillo pero no se descuenta del banco ni del
+          efectivo. Úsalo para registrar ahorros que ya existían antes de usar la app.
+        </p>
         <div className="acciones">
           <button type="button" className="boton boton--secundario" onClick={onCerrar}>
             Cancelar
@@ -351,12 +389,14 @@ function FormMovimientoBolsillo({
   bolsillo,
   tipo,
   disponible,
+  esInicial = false,
   onCerrar,
   onGuardado,
 }: {
   bolsillo: BolsilloBalance
   tipo: 'Aporte' | 'Retiro'
   disponible: number
+  esInicial?: boolean
   onCerrar: () => void
   onGuardado: () => void
 }) {
@@ -365,7 +405,8 @@ function FormMovimientoBolsillo({
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
 
-  const limite = tipo === 'Aporte' ? Math.max(disponible, 0) : bolsillo.reservado
+  const limite =
+    tipo === 'Aporte' && !esInicial ? Math.max(disponible, 0) : bolsillo.reservado
   const esAporte = tipo === 'Aporte'
 
   async function onSubmit(e: FormEvent) {
@@ -376,7 +417,7 @@ function FormMovimientoBolsillo({
       setError('El monto debe ser mayor a 0')
       return
     }
-    if (valor > limite) {
+    if (!esInicial && valor > limite) {
       setError(
         esAporte
           ? `Solo puedes apartar hasta ${moneda.format(limite)}`
@@ -390,6 +431,7 @@ function FormMovimientoBolsillo({
         tipo,
         monto: valor,
         nota: nota.trim() || undefined,
+        es_inicial: esInicial || undefined,
       })
       onGuardado()
     } catch (err) {
@@ -405,12 +447,18 @@ function FormMovimientoBolsillo({
     <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>
-          {esAporte ? 'Aportar a' : 'Liberar de'} «{bolsillo.nombre}»
+          {esInicial
+            ? `Saldo inicial de «${bolsillo.nombre}»`
+            : esAporte
+              ? `Aportar a «${bolsillo.nombre}»`
+              : `Liberar de «${bolsillo.nombre}»`}
         </h2>
         <p className="ayuda">
-          {esAporte
-            ? `Disponible para apartar: ${moneda.format(limite)}.`
-            : `Reservado en el bolsillo: ${moneda.format(limite)}.`}
+          {esInicial
+            ? 'Se suma al bolsillo sin descontarse del efectivo ni del banco.'
+            : esAporte
+              ? `Disponible para apartar: ${moneda.format(limite)}.`
+              : `Reservado en el bolsillo: ${moneda.format(limite)}.`}
         </p>
         {error && <p className="error">{error}</p>}
         <label>
@@ -418,7 +466,7 @@ function FormMovimientoBolsillo({
           <input
             type="number"
             min="0.01"
-            max={limite}
+            max={esInicial ? undefined : limite}
             step="0.01"
             value={monto}
             onChange={(e) => setMonto(e.target.value)}
@@ -431,7 +479,11 @@ function FormMovimientoBolsillo({
             value={nota}
             onChange={(e) => setNota(e.target.value)}
             placeholder={
-              esAporte ? 'Ej.: Aparto para el arriendo de noviembre' : 'Ej.: Pago del arriendo'
+              esInicial
+                ? 'Ej.: Saldo que ya estaba apartado'
+                : esAporte
+                  ? 'Ej.: Aparto para el arriendo de noviembre'
+                  : 'Ej.: Pago del arriendo'
             }
             maxLength={300}
           />
@@ -441,7 +493,13 @@ function FormMovimientoBolsillo({
             Cancelar
           </button>
           <button type="submit" className="boton" disabled={guardando}>
-            {guardando ? 'Guardando…' : esAporte ? 'Apartar' : 'Liberar'}
+            {guardando
+              ? 'Guardando…'
+              : esInicial
+                ? 'Guardar saldo inicial'
+                : esAporte
+                  ? 'Apartar'
+                  : 'Liberar'}
           </button>
         </div>
       </form>
@@ -515,6 +573,9 @@ function HistorialBolsillo({
                       >
                         {m.tipo}
                       </span>
+                      {m.es_inicial && (
+                        <span className="badge badge--info">Inicial</span>
+                      )}
                     </td>
                     <td data-label="Monto" className="derecha">
                       {moneda.format(m.monto)}
@@ -556,6 +617,7 @@ export function Balance() {
   const [movimientoBolsillo, setMovimientoBolsillo] = useState<{
     bolsillo: BolsilloBalance
     tipo: 'Aporte' | 'Retiro'
+    esInicial?: boolean
   } | null>(null)
   const [historial, setHistorial] = useState<BolsilloBalance | null>(null)
 
@@ -657,7 +719,7 @@ export function Balance() {
 
       <AyudaContextual
         titulo="Cómo leer el balance"
-        detalle="Activos, pasivos y patrimonio son un corte del momento actual; las fechas solo filtran el estado de resultados. La caja disponible descuenta lo apartado en bolsillos, que no cambian el total de activos ni la utilidad."
+        detalle="Activos, pasivos y patrimonio son un corte del momento actual; las fechas solo filtran el estado de resultados. La caja disponible descuenta lo aportado a bolsillos desde la caja; el saldo inicial de un bolsillo no descuenta el banco. Los bolsillos no cambian el total de activos ni la utilidad."
       />
 
       <div className="barra">
@@ -731,12 +793,17 @@ export function Balance() {
                 {
                   label: 'Reservado en bolsillos',
                   valor: moneda.format(datos.activos.reservado),
-                  nota: `${datos.bolsillos.length} bolsillo(s) · no disponible para operar`,
+                  nota:
+                    (datos.activos.reservado_inicial ?? 0) > 0
+                      ? `${datos.bolsillos.length} bolsillo(s) · incluye ${moneda.format(
+                          datos.activos.reservado_inicial,
+                        )} de saldo inicial`
+                      : `${datos.bolsillos.length} bolsillo(s) · no disponible para operar`,
                 },
                 {
                   label: 'Disponible para operación',
                   valor: moneda.format(datos.activos.disponible),
-                  nota: 'Efectivo + banco - reservado',
+                  nota: 'Efectivo + banco - reservado de caja',
                 },
                 {
                   label: 'Inventario',
@@ -764,7 +831,8 @@ export function Balance() {
             <p className="ayuda">
               Aparta una parte del efectivo o del banco para gastos vitales como el
               arriendo. El dinero sigue en la caja y en el patrimonio; solo deja de
-              contar como disponible para la operación diaria.
+              contar como disponible para la operación diaria. El saldo inicial no
+              se descuenta del banco: registra ahorros que ya existían.
             </p>
             {datos.activos.disponible < 0 && (
               <p className="error">
@@ -778,6 +846,9 @@ export function Balance() {
               puedeGestionar={puedeGestionar}
               onAportar={(bolsillo) =>
                 setMovimientoBolsillo({ bolsillo, tipo: 'Aporte' })
+              }
+              onSaldoInicial={(bolsillo) =>
+                setMovimientoBolsillo({ bolsillo, tipo: 'Aporte', esInicial: true })
               }
               onLiberar={(bolsillo) =>
                 setMovimientoBolsillo({ bolsillo, tipo: 'Retiro' })
@@ -894,8 +965,10 @@ export function Balance() {
             </p>
             <p className="ayuda">
               Los bolsillos no son una salida de caja: el dinero sigue en efectivo/banco y en el
-              total de activos, pero se resta del disponible para operar. Para pagar un gasto
-              vital, libera primero el bolsillo y registra la salida real en Caja.
+              total de activos, pero se resta del disponible para operar. El saldo inicial es la
+              excepción: suma al bolsillo sin descontarse del banco porque representa ahorros
+              previos. Para pagar un gasto vital, libera primero el bolsillo y registra la salida
+              real en Caja.
             </p>
           </section>
 
@@ -932,6 +1005,7 @@ export function Balance() {
           bolsillo={movimientoBolsillo.bolsillo}
           tipo={movimientoBolsillo.tipo}
           disponible={datos.activos.disponible}
+          esInicial={movimientoBolsillo.esInicial}
           onCerrar={() => setMovimientoBolsillo(null)}
           onGuardado={() => {
             setMovimientoBolsillo(null)

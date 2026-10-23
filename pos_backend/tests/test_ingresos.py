@@ -81,6 +81,9 @@ def test_ingreso_balance_efectivo_no_exige_caja_ni_mueve_caja(client, token_admi
     assert ingreso["pagado"] is True
     assert ingreso["estado_pago"] == "Pagado"
     assert ingreso["forma_pago_pago"] == "Efectivo"
+    # El detalle debe mostrar el nombre del producto, no «Producto #id».
+    assert ingreso["items"][0]["producto_nombre"] == "Harina"
+    assert ingreso["items"][0]["concepto"] is None
 
     detalle = client.get(
         f"/api/productos/{producto['id']}", headers=auth(token_admin)

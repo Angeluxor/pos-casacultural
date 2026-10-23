@@ -906,7 +906,11 @@ function DetalleIngreso({
               {ingreso.items.map((i) => (
                 <tr key={i.id}>
                   <td data-label="Tipo">{i.tipo}</td>
-                  <td data-label="Detalle">{i.concepto ?? `Producto #${i.producto_id ?? '—'}`}</td>
+                  <td data-label="Detalle">
+                    {i.concepto ??
+                      i.producto_nombre ??
+                      `Producto #${i.producto_id ?? '—'}`}
+                  </td>
                   <td data-label="Cantidad" className="derecha">
                     {i.cantidad ?? '—'}
                     {(i.unidades_por_formato ?? 1) > 1 && (

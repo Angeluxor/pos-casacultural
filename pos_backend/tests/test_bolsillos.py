@@ -12,11 +12,20 @@ def _abrir_caja(client, token, efectivo=100000, banco=50000):
     return resp.json()["id"]
 
 
-def _crear_bolsillo(client, token, nombre="Arriendo", descripcion="Reserva mensual"):
+def _crear_bolsillo(
+    client,
+    token,
+    nombre="Arriendo",
+    descripcion="Reserva mensual",
+    saldo_inicial=None,
+):
+    datos = {"nombre": nombre, "descripcion": descripcion}
+    if saldo_inicial is not None:
+        datos["saldo_inicial"] = saldo_inicial
     resp = client.post(
         "/api/balance/bolsillos",
         headers=auth(token),
-        json={"nombre": nombre, "descripcion": descripcion},
+        json=datos,
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -36,6 +45,73 @@ def test_enum_bolsillo_usa_los_nombres_que_espera_postgres():
     from app.db.models import BolsilloMovimiento
 
     assert BolsilloMovimiento.__table__.c.tipo.type.enums == ["APORTE", "RETIRO"]
+
+
+def test_saldo_inicial_suma_al_bolsillo_sin_descontar_caja(client, token_admin):
+    _abrir_caja(client, token_admin, efectivo=100000, banco=50000)
+
+    bolsillo = _crear_bolsillo(client, token_admin, saldo_inicial=50000)
+    assert bolsillo["reservado"] == 50000
+    assert bolsillo["saldo_inicial"] == 50000
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["total_reservado"] == 50000
+    assert balance["activos"]["reservado"] == 50000
+    assert balance["activos"]["reservado_inicial"] == 50000
+    assert balance["activos"]["reservado_caja"] == 0
+    # El saldo inicial no reduce el dinero disponible.
+    assert balance["activos"]["disponible"] == 150000
+    assert balance["caja"]["disponible"] == 150000
+    assert balance["activos"]["total"] == 150000
+
+    # Los aportes posteriores sí se descuentan de la caja/banco.
+    aporte = _movimiento(client, token_admin, bolsillo["id"], "Aporte", 30000)
+    assert aporte.status_code == 200, aporte.text
+    assert aporte.json()["es_inicial"] is False
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["activos"]["reservado"] == 80000
+    assert balance["activos"]["reservado_inicial"] == 50000
+    assert balance["activos"]["reservado_caja"] == 30000
+    assert balance["activos"]["disponible"] == 120000
+
+    # El historial identifica el saldo inicial como un movimiento propio.
+    historial = client.get(
+        f"/api/balance/bolsillos/{bolsillo['id']}/movimientos",
+        headers=auth(token_admin),
+    ).json()
+    inicial = next(m for m in historial if m["es_inicial"])
+    assert inicial["tipo"] == "Aporte"
+    assert inicial["monto"] == 50000
+    assert inicial["nota"] == "Saldo inicial"
+
+    # Solo los aportes pueden marcarse como saldo inicial.
+    invalido = client.post(
+        f"/api/balance/bolsillos/{bolsillo['id']}/movimientos",
+        headers=auth(token_admin),
+        json={"tipo": "Retiro", "monto": 1000, "es_inicial": True},
+    )
+    assert invalido.status_code == 400
+    assert "aporte" in invalido.json()["detail"].lower()
+
+
+def test_saldo_inicial_de_bolsillo_existente(client, token_admin):
+    _abrir_caja(client, token_admin, efectivo=100000, banco=50000)
+    bolsillo = _crear_bolsillo(client, token_admin)
+
+    # Simula el caso del ticket: el bolsillo ya existía vacío y luego se
+    # registra el saldo que ya estaba apartado.
+    resp = client.post(
+        f"/api/balance/bolsillos/{bolsillo['id']}/movimientos",
+        headers=auth(token_admin),
+        json={"tipo": "Aporte", "monto": 40000, "es_inicial": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["es_inicial"] is True
+
+    balance = client.get("/api/balance", headers=auth(token_admin)).json()
+    assert balance["activos"]["reservado"] == 40000
+    assert balance["activos"]["reservado_inicial"] == 40000
+    assert balance["activos"]["disponible"] == 150000
 
 
 def test_bolsillo_aparta_dinero_sin_cambiar_activos(client, token_admin):

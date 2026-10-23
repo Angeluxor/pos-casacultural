@@ -478,6 +478,9 @@ class BolsilloMovimiento(Base):
     tipo = Column(Enum(TipoMovimientoBolsillo), nullable=False)
     monto = Column(Float, nullable=False)
     nota = Column(String, nullable=True)
+    # Un aporte inicial suma al bolsillo sin descontarse de caja/banco. Los
+    # aportes normales y los retiros sí afectan el disponible para operar.
+    es_inicial = Column(Boolean, default=False, nullable=False, server_default="0")
     usuario_id = Column(
         Integer, ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True
     )
@@ -622,6 +625,13 @@ class IngresoInventarioItem(Base):
 
     ingreso = relationship("IngresoInventario", back_populates="items")
     producto = relationship("Producto")
+
+    @property
+    def producto_nombre(self) -> str | None:
+        """Nombre del producto existente; ``concepto`` sigue mandando."""
+        if self.concepto:
+            return self.concepto
+        return self.producto.nombre if self.producto else None
 
 
 class Receta(Base):

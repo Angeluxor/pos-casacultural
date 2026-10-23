@@ -29,7 +29,7 @@ const DATOS: BalanceGeneral = {
     efectivo: 50000,
     banco: 100000,
     reservado: 30000,
-    disponible: 120000,
+    disponible: 130000,
     abierta: true,
     turno_id: 1,
     origen: 'Turno abierto #1',
@@ -38,7 +38,9 @@ const DATOS: BalanceGeneral = {
     efectivo: 50000,
     banco: 100000,
     reservado: 30000,
-    disponible: 120000,
+    reservado_inicial: 10000,
+    reservado_caja: 20000,
+    disponible: 130000,
     inventario: 20000,
     cartera: 10000,
     total: 180000,
@@ -87,6 +89,7 @@ const DATOS: BalanceGeneral = {
       nombre: 'Arriendo',
       descripcion: 'Reserva mensual',
       reservado: 30000,
+      saldo_inicial: 10000,
       fecha_creacion: '2026-10-01T09:00:00-05:00',
     },
   ],
@@ -122,7 +125,9 @@ describe('Balance', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Arriendo')).toBeInTheDocument()
     expect(screen.getByText('Reserva mensual')).toBeInTheDocument()
+    expect(screen.getByText(/Incluye inicial/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Aportar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Saldo inicial' })).toBeInTheDocument()
     expect(obtenerBalanceMock).toHaveBeenCalledTimes(1)
   })
 })
