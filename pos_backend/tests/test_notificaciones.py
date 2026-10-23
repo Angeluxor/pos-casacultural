@@ -2,7 +2,13 @@
 import json
 from urllib.parse import parse_qs
 
+from app.db.session import SessionLocal
 from app.services import notificaciones
+from app.services.configuracion import (
+    CLAVE_TELEGRAM_CHAT_ID,
+    CLAVE_TELEGRAM_TOKEN,
+    guardar_valor,
+)
 
 from .conftest import auth
 
@@ -60,6 +66,32 @@ def test_feedback_envia_aviso_telegram(client, token_cajero, monkeypatch):
     assert "Ruta: /ventas" in texto
     assert "La caja se queda cargando" in texto
     assert "/feedback" in texto
+
+
+def test_configuracion_en_bd_tiene_prioridad(client, token_cajero, monkeypatch):
+    db = SessionLocal()
+    try:
+        guardar_valor(db, CLAVE_TELEGRAM_TOKEN, "token-db")
+        guardar_valor(db, CLAVE_TELEGRAM_CHAT_ID, "999")
+    finally:
+        db.close()
+
+    llamadas = []
+
+    def fake_urlopen(peticion, timeout=None):
+        llamadas.append(peticion)
+        return _RespuestaFalsa({"ok": True})
+
+    monkeypatch.setattr(notificaciones, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(notificaciones, "TELEGRAM_CHAT_ID", "")
+    monkeypatch.setattr(notificaciones, "urlopen", fake_urlopen)
+
+    respuesta = _crear(client, token_cajero)
+    assert respuesta.status_code == 200, respuesta.text
+    assert len(llamadas) == 1
+    assert llamadas[0].full_url.endswith("/bottoken-db/sendMessage")
+    datos = parse_qs(llamadas[0].data.decode("utf-8"))
+    assert datos["chat_id"] == ["999"]
 
 
 def test_sin_configuracion_no_intenta_enviar(client, token_cajero, monkeypatch):

@@ -8,6 +8,7 @@ from app.crud import crud_feedback
 from app.db.models import Usuario
 from app.db.session import get_db
 from app.schemas.common import Pagina
+from app.services.configuracion import configuracion_telegram
 from app.services.notificaciones import notificar_feedback_telegram
 from app.schemas.feedback import (
     EstadoFeedback,
@@ -39,6 +40,7 @@ def crear_feedback(
     feedback = crud_feedback.crear_feedback(
         db=db, datos=datos, usuario=current_user
     )
+    telegram_token, telegram_chat_id = configuracion_telegram(db)
     # El aviso es best-effort: si Telegram falla, el ticket ya quedó guardado.
     background_tasks.add_task(
         notificar_feedback_telegram,
@@ -48,6 +50,8 @@ def crear_feedback(
         usuario_nombre=feedback.usuario_nombre,
         comentario=feedback.comentario,
         contexto=feedback.contexto,
+        token=telegram_token,
+        chat_id=telegram_chat_id,
     )
     return feedback
 

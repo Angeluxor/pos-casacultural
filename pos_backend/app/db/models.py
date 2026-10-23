@@ -435,6 +435,25 @@ class RegistroCaja(Base):
     turno = relationship("TurnoCaja", back_populates="movimientos")
     usuario = relationship("Usuario")
 
+class Configuracion(Base):
+    """Ajustes internos de la aplicación, por clave.
+
+    Se usa para integraciones que no deben quedar en el repositorio, como el
+    token y el chat ID de Telegram. Las variables de entorno del hosting siguen
+    funcionando como respaldo.
+    """
+
+    __tablename__ = "configuracion"
+
+    clave = Column(String(80), primary_key=True)
+    valor = Column(Text, nullable=True)
+    actualizado_en = Column(
+        DateTime(timezone=True),
+        default=get_colombia_time,
+        onupdate=get_colombia_time,
+        nullable=False,
+    )
+
 class Bolsillo(Base):
     """Bolsillo virtual para apartar dinero de la liquidez diaria.
 

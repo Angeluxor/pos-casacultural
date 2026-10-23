@@ -106,8 +106,12 @@ def notificar_feedback_telegram(
     usuario_nombre: str,
     comentario: str,
     contexto: Optional[dict] = None,
+    token: Optional[str] = None,
+    chat_id: Optional[str] = None,
 ) -> bool:
-    if not telegram_configurado():
+    token = (token or TELEGRAM_BOT_TOKEN).strip()
+    chat_id = (chat_id or TELEGRAM_CHAT_ID).strip()
+    if not token or not chat_id:
         return False
     return enviar_mensaje_telegram(
         construir_mensaje_feedback(
@@ -117,5 +121,7 @@ def notificar_feedback_telegram(
             usuario_nombre=usuario_nombre,
             comentario=comentario,
             contexto=contexto,
-        )
+        ),
+        token=token,
+        chat_id=chat_id,
     )
