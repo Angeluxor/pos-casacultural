@@ -202,6 +202,24 @@ def anular_factura(
     )
 
 
+@router.post("/{factura_id}/items/offline", response_model=FacturaResponse)
+def agregar_item_offline(
+    factura_id: int,
+    item: ItemFacturaCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ventas.editar")),
+):
+    """Agrega un ítem capturado en el dispositivo sin conexión."""
+    return crud_factura.agregar_item_factura_offline(
+        db=db,
+        factura_id=factura_id,
+        item_in=item,
+        usuario_id=current_user.id,
+        clave_idempotencia=idempotency_key,
+    )
+
+
 @router.post("/{factura_id}/items", response_model=FacturaResponse)
 def agregar_item(
     factura_id: int,

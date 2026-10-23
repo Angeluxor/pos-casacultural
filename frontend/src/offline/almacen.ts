@@ -147,7 +147,7 @@ export type PagoOffline = {
 export type OperacionOffline = {
   /** UUID local de la operación dentro de la cola. */
   id: string
-  tipo: 'venta' | 'pago'
+  tipo: 'venta' | 'pago' | 'item'
   creadaEn: string
   fecha: string
   usuarioId: number
@@ -165,6 +165,8 @@ export type OperacionOffline = {
   pagoRegistrado: boolean
   claveVenta: string
   clavePago: string
+  /** Clave de idempotencia para agregar un ítem a una factura existente. */
+  claveItem?: string
 }
 
 export function leerCola(): OperacionOffline[] {
@@ -221,8 +223,12 @@ export function stockPendientePorProducto(
 ): Map<number, number> {
   const pendiente = new Map<number, number>()
   for (const op of cola) {
-    // Si la factura ya se creó en el servidor, el stock ya se descontó allí.
-    if (op.tipo !== 'venta' || op.facturaId !== null) continue
+    // Las ventas ya creadas en el servidor y los cobros no descuentan stock
+    // pendiente. Los ítems adicionales sí: la factura existe, pero el producto
+    // todavía no se descontó en el servidor.
+    const esVentaPendiente = op.tipo === 'venta' && op.facturaId === null
+    const esItemPendiente = op.tipo === 'item'
+    if (!esVentaPendiente && !esItemPendiente) continue
     for (const detalle of op.detalles) {
       pendiente.set(
         detalle.productoId,

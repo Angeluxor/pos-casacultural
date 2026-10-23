@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
-import { crearFactura, obtenerFactura, pagarFactura } from '../api/ventas'
+import {
+  agregarItemFacturaOffline,
+  crearFactura,
+  obtenerFactura,
+  pagarFactura,
+} from '../api/ventas'
 import { encolarOperacion, leerCola } from './almacen'
-import { crearOperacionPago, crearOperacionVenta } from './operaciones'
+import {
+  crearOperacionItem,
+  crearOperacionPago,
+  crearOperacionVenta,
+} from './operaciones'
 import { sincronizarPendientes } from './sync'
 
 vi.mock('../api/ventas', () => ({
+  agregarItemFacturaOffline: vi.fn(),
   crearFactura: vi.fn(),
   pagarFactura: vi.fn(),
   obtenerFactura: vi.fn(),
@@ -14,6 +24,7 @@ vi.mock('../api/ventas', () => ({
 const crearFacturaMock = vi.mocked(crearFactura)
 const pagarFacturaMock = vi.mocked(pagarFactura)
 const obtenerFacturaMock = vi.mocked(obtenerFactura)
+const agregarItemMock = vi.mocked(agregarItemFacturaOffline)
 
 function venta(pagos = false) {
   return crearOperacionVenta({
@@ -162,5 +173,33 @@ describe('sincronizarPendientes', () => {
       [{ valor: 500, forma_pago: 'Transferencia', fecha: op.fecha }],
       expect.objectContaining({ turnoId: 4 }),
     )
+  })
+
+  it('sincroniza un ítem agregado a una factura existente', async () => {
+    const op = crearOperacionItem({
+      usuarioId: 1,
+      usuarioNombre: 'Cajero',
+      turnoId: 4,
+      facturaId: 20,
+      detalle: {
+        productoId: 8,
+        codigo: 'P8',
+        nombre: 'Café',
+        cantidad: 2,
+        precioUnitario: 2500,
+      },
+    })
+    encolarOperacion(op)
+    agregarItemMock.mockResolvedValue({ id: 20, total: 5000 } as never)
+
+    const resultado = await sincronizarPendientes(1)
+
+    expect(resultado.sincronizadas).toBe(1)
+    expect(agregarItemMock).toHaveBeenCalledWith(
+      20,
+      { producto_id: 8, cantidad: 2, precio_unitario: 2500 },
+      { claveIdempotencia: op.claveItem, timeoutMs: 30_000 },
+    )
+    expect(leerCola()).toHaveLength(0)
   })
 })

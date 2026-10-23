@@ -30,6 +30,13 @@ internos de desarrollo; no existen tags publicados de esas versiones.
   conexión entran en una cola local con fecha, turno y precios reales; al volver
   la red se sincronizan con las claves de idempotencia existentes. La UI muestra
   un banner de estado, las operaciones pendientes y un botón de reintento.
+- **Ítems adicionales offline**: si una factura ya existe y la mesa pide otro
+  servicio sin red, el producto se guarda en la cola local con su precio. Al
+  sincronizar se agrega a la factura sin duplicarlo, se actualiza el stock y, si
+  queda negativo, la factura se marca para revisión. Cambiar cantidades,
+  retirar productos o anular sigue requiriendo conexión.
+- Migración `0023_operaciones_factura_offline` para
+  `operaciones_factura_idempotentes`.
 - **Cierre de caja protegido**: no se puede cerrar un turno mientras haya
   operaciones offline pendientes. La UI exige sincronizar la cola y volver a
   abrir el cuadro de cierre para recalcular los saldos; si alguna operación
@@ -83,8 +90,10 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ### Limitaciones del modo offline
 
-- Solo ventas y cobros funcionan sin red. Productos, clientes, caja,
-  inventario, reportes y administración siguen requiriendo conexión.
+- Solo ventas, cobros y adición de ítems a facturas existentes funcionan sin
+  red. Cambiar cantidades, retirar productos, anular, y las secciones de
+  productos, clientes, caja, inventario, reportes y administración siguen
+  requiriendo conexión.
 - La cola y el catálogo se guardan en `localStorage` del navegador. Borrar los
   datos del sitio o usar otro navegador/dispositivo no traslada las operaciones
   pendientes.

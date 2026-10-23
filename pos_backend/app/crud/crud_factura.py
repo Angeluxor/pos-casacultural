@@ -4,8 +4,9 @@ from fastapi import HTTPException
 from datetime import datetime, timedelta
 from app.db.models import (
     Factura, DetalleFactura, Producto, TurnoCaja, RegistroCaja,
-    Pago, PagoIdempotente, Cliente, EstadoFactura, FormaPago,
-    TipoMovimientoInventario, Kardex, TipoMovimientoCaja
+    Pago, PagoIdempotente, OperacionFacturaIdempotente, Cliente,
+    EstadoFactura, FormaPago, TipoMovimientoInventario, Kardex,
+    TipoMovimientoCaja
 )
 from app.core.timezone import get_colombia_time
 from app.core.categorias_caja import (
@@ -293,6 +294,27 @@ def _buscar_pago_idempotente(
     return operacion
 
 
+def _buscar_operacion_factura_idempotente(
+    db: Session, clave: str, factura_id: int, tipo: str
+) -> OperacionFacturaIdempotente | None:
+    operacion = (
+        db.query(OperacionFacturaIdempotente)
+        .filter(OperacionFacturaIdempotente.clave == clave)
+        .first()
+    )
+    if operacion and (
+        operacion.factura_id != factura_id or operacion.tipo != tipo
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Esa clave de idempotencia ya fue usada para otra operación. "
+                "No se aplicó ningún cambio."
+            ),
+        )
+    return operacion
+
+
 def registrar_pagos_factura(
     db: Session,
     factura_id: int,
@@ -574,13 +596,19 @@ def _mover_stock(
     delta: int,
     usuario_id: int,
     referencia: str,
-):
-    """delta > 0 devuelve stock (Devolución); delta < 0 descuenta stock (Salida por Venta)."""
+    permitir_negativo: bool = False,
+) -> bool:
+    """delta > 0 devuelve stock (Devolución); delta < 0 descuenta stock (Salida por Venta).
+
+    Devuelve ``True`` si el producto quedó con stock negativo. Las operaciones
+    offline pueden permitirlo: la venta ya ocurrió físicamente y se marca para
+    revisión en vez de rechazarse.
+    """
     if delta == 0:
-        return
+        return producto.stock < 0
     if delta < 0:
         cantidad = -delta
-        if producto.stock < cantidad:
+        if producto.stock < cantidad and not permitir_negativo:
             db.rollback()
             raise HTTPException(
                 status_code=400,
@@ -603,6 +631,7 @@ def _mover_stock(
             referencia=referencia,
         )
     )
+    return producto.stock < 0
 
 
 def _recalcular_factura(db: Session, factura: Factura):
@@ -668,6 +697,157 @@ def agregar_item_factura(db: Session, factura_id: int, item_in: ItemFacturaCreat
     db.commit()
     db.refresh(factura)
     return factura
+
+
+def _marcar_revision(factura: Factura, nota: str) -> None:
+    factura.requiere_revision = True
+    actual = (factura.nota_revision or "").strip()
+    if nota not in actual:
+        factura.nota_revision = f"{actual} {nota}".strip()
+
+
+def agregar_item_factura_offline(
+    db: Session,
+    factura_id: int,
+    item_in: ItemFacturaCreate,
+    usuario_id: int,
+    clave_idempotencia: str | None,
+):
+    """Agrega un ítem capturado sin conexión a una factura ya existente.
+
+    A diferencia de la edición online, conserva el precio del dispositivo y
+    permite stock negativo: el servicio ya se prestó y no se puede perder la
+    venta. La factura queda marcada para revisión cuando el inventario alcanza
+    un valor negativo.
+    """
+    clave = (clave_idempotencia or "").strip()
+    if not clave:
+        raise HTTPException(
+            status_code=400,
+            detail="La operación offline necesita una clave de idempotencia.",
+        )
+    if len(clave) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="La clave de idempotencia no puede superar 64 caracteres.",
+        )
+    if item_in.cantidad <= 0:
+        raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0.")
+
+    existente = _buscar_operacion_factura_idempotente(
+        db, clave, factura_id, "agregar_item"
+    )
+    if existente:
+        return _factura_con_relaciones(db, factura_id)
+
+    factura = _bloquear_factura_mutable(db, factura_id)
+
+    # Otra petición con la misma clave pudo terminar mientras esperábamos el
+    # bloqueo de la factura. Se comprueba de nuevo antes de tocar el stock.
+    existente = _buscar_operacion_factura_idempotente(
+        db, clave, factura_id, "agregar_item"
+    )
+    if existente:
+        db.rollback()
+        return _factura_con_relaciones(db, factura_id)
+
+    producto = (
+        db.query(Producto)
+        .filter(Producto.id == item_in.producto_id)
+        .with_for_update()
+        .first()
+    )
+    if not producto:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    precio = producto.precio
+    if item_in.precio_unitario is not None:
+        if item_in.precio_unitario < 0:
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail="El precio cobrado del producto no puede ser negativo.",
+            )
+        precio = round(float(item_in.precio_unitario), 2)
+
+    # Reservar la clave antes de modificar la factura. El índice único es la
+    # última barrera si dos reintentos llegan exactamente a la vez.
+    db.add(
+        OperacionFacturaIdempotente(
+            clave=clave,
+            factura_id=factura.id,
+            tipo="agregar_item",
+        )
+    )
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existente = _buscar_operacion_factura_idempotente(
+            db, clave, factura_id, "agregar_item"
+        )
+        if existente:
+            return _factura_con_relaciones(db, factura_id)
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo agregar el ítem por un conflicto de concurrencia. Intenta de nuevo.",
+        )
+
+    detalle = next(
+        (
+            d
+            for d in factura.detalles
+            if d.producto_id == producto.id
+            and not d.anulado
+            and round(float(d.precio_unitario or 0), 2) == precio
+        ),
+        None,
+    )
+    if detalle:
+        detalle.cantidad += item_in.cantidad
+        detalle.subtotal = round(precio * detalle.cantidad, 2)
+    else:
+        detalle = DetalleFactura(
+            producto_id=producto.id,
+            cantidad=item_in.cantidad,
+            precio_unitario=precio,
+            subtotal=round(precio * item_in.cantidad, 2),
+        )
+        factura.detalles.append(detalle)
+
+    quedo_negativo = _mover_stock(
+        db,
+        producto,
+        -item_in.cantidad,
+        usuario_id,
+        f"Adición offline a Factura #{factura.id}",
+        permitir_negativo=True,
+    )
+    if quedo_negativo:
+        _marcar_revision(
+            factura,
+            f"Stock insuficiente de {producto.nombre}: quedó {producto.stock}.",
+        )
+
+    _recalcular_factura(db, factura)
+    factura_id_guardada = factura.id
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existente = _buscar_operacion_factura_idempotente(
+            db, clave, factura_id, "agregar_item"
+        )
+        if existente:
+            return _factura_con_relaciones(db, factura_id)
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo agregar el ítem por un conflicto de concurrencia. Intenta de nuevo.",
+        )
+
+    return _factura_con_relaciones(db, factura_id_guardada)
 
 
 def actualizar_item_factura(

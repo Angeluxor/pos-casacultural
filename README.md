@@ -42,9 +42,9 @@ Navegador
 ## Modo offline
 
 - La primera vez hay que abrir la app **con conexión** para instalar el service worker y guardar el catálogo y la caja activa.
-- Sin red se pueden registrar ventas y cobros si hay una caja abierta cacheada. Quedan en una cola local y se envían solos al recuperar la conexión; también se pueden reintentar desde el banner o desde Ventas.
+- Sin red se pueden registrar ventas, cobros y **agregar ítems a una factura ya existente** si hay una caja abierta cacheada. Quedan en una cola local y se envían solos al recuperar la conexión; también se pueden reintentar desde el banner o desde Ventas.
 - No se puede cerrar la caja hasta que la cola quede vacía.
-- Editar productos, abrir/cerrar caja, inventario, reportes y administración requieren conexión.
+- Cambiar cantidades, retirar productos o anular una factura requiere conexión. También requieren conexión los productos, clientes, apertura/cierre de caja, inventario, reportes y administración.
 - Si una venta offline deja el stock negativo, se conserva y se marca **Revisar** en Ventas. Varios dispositivos offline pueden sobrevender; el inventario debe conciliarse manualmente.
 
 ## Estructura del proyecto

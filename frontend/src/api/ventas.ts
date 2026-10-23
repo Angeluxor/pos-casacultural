@@ -174,6 +174,21 @@ export function agregarItemFactura(
   return apiJson<Factura>(`/api/facturas/${id}/items`, 'POST', data)
 }
 
+export function agregarItemFacturaOffline(
+  id: number,
+  data: { producto_id: number; cantidad: number; precio_unitario: number },
+  opciones: CrearFacturaOpciones = {},
+): Promise<Factura> {
+  const headers = new Headers()
+  if (opciones.claveIdempotencia) {
+    headers.set('Idempotency-Key', opciones.claveIdempotencia)
+  }
+  return apiJson<Factura>(`/api/facturas/${id}/items/offline`, 'POST', data, {
+    headers,
+    timeoutMs: opciones.timeoutMs,
+  })
+}
+
 export function actualizarItemFactura(
   id: number,
   detalleId: number,

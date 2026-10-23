@@ -14,7 +14,12 @@ import {
   normalizarCola,
   stockPendientePorProducto,
 } from './almacen'
-import { crearOperacionVenta } from './operaciones'
+import {
+  contarItemsPendientesFactura,
+  crearOperacionItem,
+  crearOperacionVenta,
+  facturaConItemsPendientes,
+} from './operaciones'
 import type { Producto } from '../api/productos'
 import type { Factura, PaginaFacturas } from '../api/ventas'
 import type { UsuarioSesion } from '../api/types'
@@ -76,6 +81,67 @@ describe('almacen offline', () => {
     actualizarOperacion(op.id, { facturaId: 99 })
     expect(stockPendientePorProducto().get(1)).toBeUndefined()
     expect(aplicarStockPendiente([PRODUCTO])[0].stock).toBe(10)
+  })
+
+  it('descuenta el stock de un ítem pendiente de una factura existente', () => {
+    const op = crearOperacionItem({
+      usuarioId: 7,
+      usuarioNombre: 'Cajero',
+      turnoId: 3,
+      facturaId: 42,
+      detalle: {
+        productoId: 1,
+        codigo: 'P1',
+        nombre: 'Producto',
+        cantidad: 1,
+        precioUnitario: 1000,
+      },
+    })
+    encolarOperacion(op)
+
+    expect(stockPendientePorProducto().get(1)).toBe(1)
+    expect(aplicarStockPendiente([PRODUCTO])[0].stock).toBe(9)
+  })
+
+  it('suma los ítems pendientes al total y saldo de la factura', () => {
+    const op = crearOperacionItem({
+      usuarioId: 7,
+      usuarioNombre: 'Cajero',
+      turnoId: 3,
+      facturaId: 42,
+      detalle: {
+        productoId: 1,
+        codigo: 'P1',
+        nombre: 'Producto',
+        cantidad: 2,
+        precioUnitario: 1000,
+      },
+    })
+    encolarOperacion(op)
+
+    const factura = {
+      id: 42,
+      total: 3000,
+      saldo: 3000,
+      estado: 'Abierta',
+      pagos: [],
+      detalles: [
+        {
+          id: 1,
+          producto_id: 2,
+          cantidad: 3,
+          precio_unitario: 1000,
+          subtotal: 3000,
+          anulado: false,
+        },
+      ],
+    } as unknown as Factura
+
+    const conPendientes = facturaConItemsPendientes(factura, leerCola())
+    expect(conPendientes.total).toBe(5000)
+    expect(conPendientes.saldo).toBe(5000)
+    expect(conPendientes.detalles).toHaveLength(2)
+    expect(contarItemsPendientesFactura(42, leerCola())).toBe(2)
   })
 
   it('normaliza operaciones que quedaron sincronizando tras un cierre', () => {

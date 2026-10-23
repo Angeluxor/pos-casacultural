@@ -32,6 +32,7 @@ import { usePaginacion } from '../lib/usePaginacion'
 import { useOffline } from '../offline/useOffline'
 import {
   aplicarStockPendiente,
+  eliminarOperacion,
   encolarOperacion,
   guardarCatalogo,
   guardarFacturasCache,
@@ -40,8 +41,12 @@ import {
   type OperacionOffline,
 } from '../offline/almacen'
 import {
+  aplicarItemAFactura,
+  contarItemsPendientesFactura,
+  crearOperacionItem,
   crearOperacionPago,
   crearOperacionVenta,
+  facturaConItemsPendientes,
   pagosDesdeLineas,
 } from '../offline/operaciones'
 import { FormCliente } from './Clientes'
@@ -453,57 +458,72 @@ export function Ventas() {
                 </tr>
               </thead>
               <tbody>
-                {facturas.map((f) => (
-                  <tr key={f.id}>
-                    <td data-label="Factura">#{f.id}</td>
-                    <td data-label="Fecha">{formatoFecha(f.fecha)}</td>
-                    <td data-label="Cliente">{f.cliente_nombre || '—'}</td>
-                    <td data-label="Forma de pago" title={detalleFormasPago(f)}>
-                      {formaPagoFactura(f)}
-                    </td>
-                    <td data-label="Total" className="derecha">
-                      {moneda.format(f.total)}
-                    </td>
-                    <td data-label="Saldo" className="derecha">
-                      {moneda.format(f.saldo)}
-                    </td>
-                    <td data-label="Estado">
-                      <span className={claseEstado(f.estado)}>{f.estado}</span>
-                      {f.requiere_revision && (
-                        <span
-                          className="badge badge--warn badge--revision"
-                          title={f.nota_revision ?? 'Venta offline para revisar'}
-                        >
-                          Revisar
-                        </span>
-                      )}
-                    </td>
-                    <td className="celda-accion">
-                      <div className="acciones-fila">
-                        <button
-                          className="boton boton--mini"
-                          onClick={() => {
-                            setModoFactura('ver')
-                            setCobrar(f)
-                          }}
-                        >
-                          Ver
-                        </button>
-                        {f.saldo > 0 && f.estado !== 'Anulada' && puedeCobrar && (
+                {facturas.map((f) => {
+                  const fm = facturaConItemsPendientes(f, operaciones)
+                  const itemsPendientes = contarItemsPendientesFactura(
+                    f.id,
+                    operaciones,
+                  )
+                  return (
+                    <tr key={f.id}>
+                      <td data-label="Factura">#{f.id}</td>
+                      <td data-label="Fecha">{formatoFecha(fm.fecha)}</td>
+                      <td data-label="Cliente">{fm.cliente_nombre || '—'}</td>
+                      <td data-label="Forma de pago" title={detalleFormasPago(fm)}>
+                        {formaPagoFactura(fm)}
+                      </td>
+                      <td data-label="Total" className="derecha">
+                        {moneda.format(fm.total)}
+                      </td>
+                      <td data-label="Saldo" className="derecha">
+                        {moneda.format(fm.saldo)}
+                      </td>
+                      <td data-label="Estado">
+                        <span className={claseEstado(fm.estado)}>{fm.estado}</span>
+                        {fm.requiere_revision && (
+                          <span
+                            className="badge badge--warn badge--revision"
+                            title={fm.nota_revision ?? 'Venta offline para revisar'}
+                          >
+                            Revisar
+                          </span>
+                        )}
+                        {itemsPendientes > 0 && (
+                          <span
+                            className="badge badge--warn"
+                            title="Ítems agregados sin conexión, pendientes de sincronizar"
+                          >
+                            +{itemsPendientes} sin sincronizar
+                          </span>
+                        )}
+                      </td>
+                      <td className="celda-accion">
+                        <div className="acciones-fila">
                           <button
                             className="boton boton--mini"
                             onClick={() => {
-                              setModoFactura('pagar')
-                              setCobrar(f)
+                              setModoFactura('ver')
+                              setCobrar(fm)
                             }}
                           >
-                            Pagar
+                            Ver
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {fm.saldo > 0 && fm.estado !== 'Anulada' && puedeCobrar && (
+                            <button
+                              className="boton boton--mini"
+                              onClick={() => {
+                                setModoFactura('pagar')
+                                setCobrar(fm)
+                              }}
+                            >
+                              Pagar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -540,6 +560,7 @@ export function Ventas() {
           factura={cobrar}
           productos={productosConPendientes}
           clientes={clientes}
+          operaciones={operaciones}
           puedeEditar={puedeEditar}
           puedeAnular={puedeAnular}
           modo={modoFactura}
@@ -597,11 +618,19 @@ function OperacionesPendientes({
             ? `Factura #${op.facturaId}`
             : `Ref. ${op.id.slice(0, 8)}`
           const cobro = op.pagos.length > 0 ? ' · cobro incluido' : ''
+          const etiqueta =
+            op.tipo === 'venta'
+              ? 'Venta'
+              : op.tipo === 'pago'
+                ? 'Cobro'
+                : 'Ítem adicional'
+          const producto = op.tipo === 'item' ? op.detalles[0]?.nombre : null
           return (
             <li key={op.id} className={`operacion-pendiente operacion-pendiente--${op.estado}`}>
               <div>
                 <strong>
-                  {op.tipo === 'venta' ? 'Venta' : 'Cobro'} {referencia}
+                  {etiqueta} {referencia}
+                  {producto ? ` · ${producto}` : ''}
                   {cobro}
                 </strong>
                 <span>
@@ -615,6 +644,23 @@ function OperacionesPendientes({
               <span className="badge badge--warn">
                 {op.estado === 'error' ? 'Revisar' : 'Pendiente'}
               </span>
+              {op.tipo === 'item' && op.estado === 'error' && (
+                <button
+                  type="button"
+                  className="boton boton--mini boton--danger"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        '¿Descartar este ítem? No se agregará a la factura y dejará de bloquear la caja.',
+                      )
+                    ) {
+                      eliminarOperacion(op.id)
+                    }
+                  }}
+                >
+                  Descartar
+                </button>
+              )}
             </li>
           )
         })}
@@ -1300,6 +1346,7 @@ function FormCobro({
   factura,
   productos,
   clientes,
+  operaciones,
   puedeEditar,
   puedeAnular,
   modo,
@@ -1312,6 +1359,7 @@ function FormCobro({
   factura: Factura
   productos: Producto[]
   clientes: Cliente[]
+  operaciones: OperacionOffline[]
   puedeEditar: boolean
   puedeAnular: boolean
   modo: 'ver' | 'pagar'
@@ -1339,10 +1387,17 @@ function FormCobro({
 
   const productosPorId = useMemo(() => new Map(productos.map((p) => [p.id, p])), [productos])
   const esPago = modo === 'pagar'
+  const sinConexion =
+    !enLinea || (typeof navigator !== 'undefined' && !navigator.onLine)
   const facturaAbierta = f.estado !== 'Anulada'
-  const editable = facturaAbierta && modo === 'ver' && puedeEditar && enLinea
-  const puedeAnularAqui = facturaAbierta && modo === 'ver' && puedeAnular && enLinea
+  const itemsPendientes = contarItemsPendientesFactura(f.id, operaciones)
+  // Agregar productos sí se permite sin red; cambiar cantidades, retirar o
+  // anular sigue requiriendo conexión.
+  const puedeAgregar = facturaAbierta && modo === 'ver' && puedeEditar
+  const editable = puedeAgregar && !sinConexion
+  const puedeAnularAqui = facturaAbierta && modo === 'ver' && puedeAnular && !sinConexion
   const puedePagar = facturaAbierta && modo === 'pagar' && f.saldo > 0
+  const pagoBloqueadoPorItems = !sinConexion && itemsPendientes > 0
   const activos = f.detalles.filter((d) => !d.anulado)
   const unaSolaLinea = activos.length <= 1
 
@@ -1366,6 +1421,37 @@ function FormCobro({
 
   async function agregar(p: Producto) {
     setError('')
+
+    if (sinConexion) {
+      if (!usuario) {
+        setError('No hay una sesión válida. Vuelve a iniciar sesión.')
+        return
+      }
+      const detalle = {
+        productoId: p.id,
+        codigo: p.codigo,
+        nombre: p.nombre,
+        cantidad: 1,
+        precioUnitario: p.precio,
+      }
+      const operacion = crearOperacionItem({
+        usuarioId: usuario.id,
+        usuarioNombre: usuario.nombre || usuario.username,
+        turnoId,
+        facturaId: f.id,
+        detalle,
+      })
+      if (!encolarOperacion(operacion)) {
+        setError(
+          'No se pudo guardar el ítem en este dispositivo (almacenamiento lleno o bloqueado). No se agregó nada.',
+        )
+        return
+      }
+      setF((prev) => aplicarItemAFactura(prev, detalle))
+      setBuscar('')
+      return
+    }
+
     setOcupado(true)
     try {
       aplicar(await agregarItemFactura(f.id, { producto_id: p.id, cantidad: 1 }))
@@ -1405,6 +1491,12 @@ function FormCobro({
 
   async function pagar() {
     setError('')
+    if (!sinConexion && itemsPendientes > 0) {
+      setError(
+        'Hay ítems agregados sin conexión pendientes de sincronizar. Espera un momento y vuelve a intentar el cobro.',
+      )
+      return
+    }
     const valor = Number(monto)
     if (!valor || valor <= 0 || valor > f.saldo) {
       setError(`El monto debe ser mayor a 0 y no superar el saldo (${moneda.format(f.saldo)})`)
@@ -1444,7 +1536,7 @@ function FormCobro({
       return true
     }
 
-    if (!enLinea || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+    if (sinConexion) {
       if (!turnoId) {
         setError(
           'Necesitas una caja abierta para cobrar sin conexión. Ábrela cuando tengas red y vuelve a intentarlo.',
@@ -1544,10 +1636,18 @@ function FormCobro({
     <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
       <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
         <h2>{esPago ? `Registrar pago · Factura #${f.id}` : `Factura #${f.id}`}</h2>
-        {!enLinea && (
+        {sinConexion && (
           <p className="aviso">
-            Sin conexión: el cobro se guardará en este dispositivo. Editar o
-            anular la factura requiere conexión.
+            Sin conexión: puedes agregar productos y cobrar; se guardarán en
+            este dispositivo y se sincronizarán al volver la red. Cambiar
+            cantidades, retirar productos o anular requiere conexión.
+          </p>
+        )}
+        {itemsPendientes > 0 && (
+          <p className="aviso">
+            Esta factura tiene {itemsPendientes} ítem(s) agregado(s) sin
+            conexión, pendientes de sincronizar. El total mostrado ya los
+            incluye.
           </p>
         )}
         {f.requiere_revision && (
@@ -1578,7 +1678,7 @@ function FormCobro({
 
         <p className="ayuda">Cliente: {f.cliente_nombre || '—'}</p>
         {facturaAbierta &&
-          enLinea &&
+          !sinConexion &&
           (asignando ? (
             <div className="buscador-producto">
               <input
@@ -1627,11 +1727,12 @@ function FormCobro({
             </div>
           ))}
 
-        {editable && (
+        {puedeAgregar && (
           <>
             <p className="ayuda">
-              Agrega productos o ajusta cantidades (servicio a la mesa). Los cambios ajustan el stock
-              y el saldo, pero no registran movimientos de caja.
+              {sinConexion
+                ? 'Agrega productos para el servicio a la mesa. Quedarán guardados en este dispositivo y se sincronizarán al volver la red.'
+                : 'Agrega productos o ajusta cantidades (servicio a la mesa). Los cambios ajustan el stock y el saldo, pero no registran movimientos de caja.'}
             </p>
             <div className="buscador-producto">
               <input
@@ -1783,7 +1884,16 @@ function FormCobro({
               <button type="button" className="boton boton--secundario" onClick={onCerrar}>
                 Cerrar
               </button>
-              <button type="submit" className="boton" disabled={guardando || ocupado}>
+              <button
+                type="submit"
+                className="boton"
+                disabled={guardando || ocupado || pagoBloqueadoPorItems}
+                title={
+                  pagoBloqueadoPorItems
+                    ? 'Primero deben sincronizarse los ítems agregados sin conexión'
+                    : undefined
+                }
+              >
                 {guardando ? 'Registrando…' : 'Registrar pago'}
               </button>
             </div>
@@ -1797,7 +1907,11 @@ function FormCobro({
                   : 'Esta factura ya está paga.'}
               </p>
             ) : (
-              <p className="ayuda">Los cambios en los productos se guardan al instante.</p>
+              <p className="ayuda">
+                {sinConexion
+                  ? 'Los cambios en los productos se guardarán en este dispositivo hasta recuperar la conexión.'
+                  : 'Los cambios en los productos se guardan al instante.'}
+              </p>
             )}
             <div className="acciones">
               {puedeAnularAqui && (

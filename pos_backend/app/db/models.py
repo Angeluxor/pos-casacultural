@@ -384,6 +384,30 @@ class PagoIdempotente(Base):
     factura = relationship("Factura")
 
 
+class OperacionFacturaIdempotente(Base):
+    """Registro de una operación offline ya aplicada sobre una factura.
+
+    La clave la genera el dispositivo y se envía en ``Idempotency-Key``. Si la
+    respuesta se pierde y el POS reintenta, el backend devuelve la factura tal
+    como quedó en lugar de agregar el producto dos veces.
+    """
+
+    __tablename__ = "operaciones_factura_idempotentes"
+
+    id = Column(Integer, primary_key=True)
+    clave = Column(String(64), unique=True, index=True, nullable=False)
+    factura_id = Column(
+        Integer, ForeignKey("facturas.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Permite reutilizar la tabla en fases posteriores (cantidades, retiros).
+    tipo = Column(String(32), nullable=False, default="agregar_item")
+    creado_en = Column(
+        DateTime(timezone=True), default=get_colombia_time, nullable=False
+    )
+
+    factura = relationship("Factura")
+
+
 class DescuentoNomina(Base):
     """Evento de auditoría de un descuento de nómina.
 

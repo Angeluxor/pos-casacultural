@@ -1,5 +1,10 @@
 import { ApiError, esErrorRed } from '../api/client'
-import { crearFactura, obtenerFactura, pagarFactura } from '../api/ventas'
+import {
+  agregarItemFacturaOffline,
+  crearFactura,
+  obtenerFactura,
+  pagarFactura,
+} from '../api/ventas'
 import {
   actualizarOperacion,
   eliminarOperacion,
@@ -70,6 +75,27 @@ async function sincronizarOperacion(
 
     if (!facturaId) {
       throw new Error('La operación no tiene una factura asociada.')
+    }
+
+    if (op.tipo === 'item') {
+      const detalle = op.detalles[0]
+      if (!detalle) {
+        throw new Error('La operación no tiene un producto asociado.')
+      }
+      await agregarItemFacturaOffline(
+        facturaId,
+        {
+          producto_id: detalle.productoId,
+          cantidad: detalle.cantidad,
+          precio_unitario: detalle.precioUnitario,
+        },
+        {
+          claveIdempotencia: op.claveItem ?? op.claveVenta,
+          timeoutMs: 30_000,
+        },
+      )
+      eliminarOperacion(op.id)
+      return 'ok'
     }
 
     if (op.pagos.length > 0 && !op.pagoRegistrado) {
