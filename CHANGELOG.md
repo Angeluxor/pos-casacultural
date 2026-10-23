@@ -13,6 +13,10 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ### Añadido
 
+- **Avisos de feedback por Telegram**: al entrar un ticket nuevo, el backend
+  envía un mensaje con tipo, prioridad, autor, ruta, comentario y enlace a la
+  bandeja. Es opcional y se activa con `TELEGRAM_BOT_TOKEN` y
+  `TELEGRAM_CHAT_ID`; si faltan, el feedback sigue funcionando sin avisos.
 - **Saldo inicial de bolsillos**: al crear un bolsillo (o después, con «Saldo
   inicial») se puede registrar dinero que ya estaba apartado. Suma al reservado
   pero no se descuenta del efectivo/banco; los aportes posteriores sí. El

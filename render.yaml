@@ -32,3 +32,11 @@ services:
         sync: false
       - key: ADMIN_NOMBRE
         value: Administrador
+      # Avisos de feedback por Telegram (opcionales). Render los pedirá al
+      # aplicar el Blueprint; si se dejan vacíos, no se envían avisos.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: FRONTEND_URL
+        value: https://pos-casacultural.vercel.app

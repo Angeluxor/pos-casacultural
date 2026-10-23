@@ -96,6 +96,35 @@ Al iniciar el contenedor se ejecuta `scripts/crear_admin.py` (idempotente): si n
 > python scripts/crear_admin.py
 > ```
 
+### Avisos de feedback por Telegram (opcional)
+
+Cuando alguien envía un ticket desde la app, el backend puede avisar por
+Telegram con el tipo, el autor, la ruta y el comentario. Es opcional: si las
+variables no están configuradas, el feedback se guarda igual.
+
+1. En Telegram, habla con **@BotFather**, envía `/newbot` y guarda el **token**.
+2. Envía cualquier mensaje al bot que acabas de crear.
+3. Consulta el chat ID:
+
+   ```text
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+
+   Busca `message.chat.id` en la respuesta. También puedes usar **@userinfobot**.
+4. En Render → servicio → **Environment**, agrega:
+
+   | Variable | Valor |
+   |----------|-------|
+   | `TELEGRAM_BOT_TOKEN` | Token de BotFather |
+   | `TELEGRAM_CHAT_ID` | Chat ID del usuario o grupo que recibirá los avisos |
+   | `FRONTEND_URL` | `https://pos-casacultural.vercel.app` (para el enlace «Ver bandeja») |
+
+5. Guarda; Render redepliega. Crea un ticket de prueba y debería llegar el mensaje.
+
+> Si usas un grupo, agrega el bot al grupo, envía un mensaje allí y usa el chat ID
+> del grupo (suele empezar con `-`). Nunca pongas el token en el frontend ni en el
+> repositorio.
+
 ---
 
 ## 4. Frontend en Vercel

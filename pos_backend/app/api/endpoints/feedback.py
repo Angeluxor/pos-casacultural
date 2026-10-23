@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_permiso
@@ -8,6 +8,7 @@ from app.crud import crud_feedback
 from app.db.models import Usuario
 from app.db.session import get_db
 from app.schemas.common import Pagina
+from app.services.notificaciones import notificar_feedback_telegram
 from app.schemas.feedback import (
     EstadoFeedback,
     FeedbackCreate,
@@ -23,6 +24,7 @@ router = APIRouter()
 @router.post("/", response_model=FeedbackResponse)
 def crear_feedback(
     datos: FeedbackCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_permiso("feedback.crear")),
 ):
@@ -34,7 +36,20 @@ def crear_feedback(
             status_code=429,
             detail="Enviaste varios comentarios seguidos. Espera un minuto antes de reintentar.",
         )
-    return crud_feedback.crear_feedback(db=db, datos=datos, usuario=current_user)
+    feedback = crud_feedback.crear_feedback(
+        db=db, datos=datos, usuario=current_user
+    )
+    # El aviso es best-effort: si Telegram falla, el ticket ya quedó guardado.
+    background_tasks.add_task(
+        notificar_feedback_telegram,
+        feedback_id=feedback.id,
+        tipo=feedback.tipo,
+        prioridad=feedback.prioridad,
+        usuario_nombre=feedback.usuario_nombre,
+        comentario=feedback.comentario,
+        contexto=feedback.contexto,
+    )
+    return feedback
 
 
 @router.get("/", response_model=Pagina[FeedbackResponse])

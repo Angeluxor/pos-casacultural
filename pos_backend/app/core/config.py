@@ -43,6 +43,19 @@ CORS_ORIGINS = [
     if origen.strip()
 ]
 
+# --- Avisos de feedback por Telegram ---
+# Si faltan el token o el chat ID, la app sigue funcionando y simplemente no
+# envía avisos. Configúralos como variables de entorno en producción.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+# URL pública del frontend para enlazar desde el aviso.
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://pos-casacultural.vercel.app"
+    if IS_PRODUCTION
+    else "http://localhost:5173",
+).rstrip("/")
+
 
 def validar_configuracion() -> None:
     """Comprueba ajustes peligrosos y avisa (o falla) según el entorno.
