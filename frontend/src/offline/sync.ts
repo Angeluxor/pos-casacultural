@@ -1,4 +1,4 @@
-import { ApiError, esErrorRed } from '../api/client'
+import { ApiError, esErrorRed, esErrorTiempo } from '../api/client'
 import {
   agregarItemFacturaOffline,
   crearFactura,
@@ -17,6 +17,8 @@ export type ResultadoSincronizacion = {
   pendientes: number
   errores: number
   sinConexion: boolean
+  /** El servidor no respondió a tiempo (arranque en frío), pero hay red. */
+  servidorLento: boolean
 }
 
 function mensajeError(err: unknown): string {
@@ -35,7 +37,7 @@ async function facturaYaPagada(facturaId: number): Promise<boolean> {
 async function sincronizarOperacion(
   op: OperacionOffline,
   usuarioId: number,
-): Promise<'ok' | 'red' | 'error' | 'sesion'> {
+): Promise<'ok' | 'red' | 'lento' | 'error' | 'sesion'> {
   if (op.usuarioId !== usuarioId) {
     actualizarOperacion(op.id, {
       estado: 'error',
@@ -139,6 +141,16 @@ async function sincronizarOperacion(
       return 'sesion'
     }
 
+    if (esErrorTiempo(err)) {
+      // La operación sigue pendiente y se reintentará; no es una caída de red.
+      actualizarOperacion(op.id, {
+        estado: 'pendiente',
+        intentos: op.intentos + 1,
+        ultimoError: mensajeError(err),
+      })
+      return 'lento'
+    }
+
     if (esErrorRed(err)) {
       actualizarOperacion(op.id, {
         estado: 'pendiente',
@@ -172,12 +184,14 @@ export async function sincronizarPendientes(
       pendientes: leerCola().length,
       errores: 0,
       sinConexion: true,
+      servidorLento: false,
     }
   }
 
   let sincronizadas = 0
   let errores = 0
   let sinConexion = false
+  let servidorLento = false
 
   // Se usa una copia: la cola real se va modificando durante el recorrido.
   const operaciones = leerCola()
@@ -190,6 +204,9 @@ export async function sincronizarPendientes(
     } else if (resultado === 'red') {
       sinConexion = true
       break
+    } else if (resultado === 'lento') {
+      servidorLento = true
+      break
     } else if (resultado === 'sesion') {
       errores += 1
       break
@@ -201,5 +218,6 @@ export async function sincronizarPendientes(
     pendientes: leerCola().length,
     errores,
     sinConexion,
+    servidorLento,
   }
 }

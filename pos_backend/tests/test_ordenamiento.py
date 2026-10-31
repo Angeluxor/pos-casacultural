@@ -108,3 +108,57 @@ def test_facturas_ordenan_por_total_descendente(client, token_cajero):
     assert resp_cliente.status_code == 200
     nombres = [f["cliente_nombre"] or "" for f in resp_cliente.json()["items"]]
     assert nombres == sorted(nombres, key=str.lower)
+
+
+def test_lineas_de_factura_mantienen_su_orden_al_cambiar_cantidad(
+    client, token_cajero
+):
+    """Las líneas no deben saltar de sitio al editar una cantidad.
+
+    PostgreSQL no garantiza el orden de un SELECT sin ORDER BY. Al cambiar la
+    cantidad de una línea se reescribe su tupla, así que podía aparecer al
+    final de la tabla y descolocar la venta mientras el cajero la editaba.
+    """
+    client.post(
+        "/api/caja/abrir",
+        headers=auth(token_cajero),
+        json={"saldo_inicial_efectivo": 0, "saldo_inicial_banco": 0},
+    )
+    productos = [
+        _producto(client, token_cajero, f"PO{i}", f"Producto {i}", 1000, 10)
+        for i in range(3)
+    ]
+
+    resp = client.post(
+        "/api/facturas/",
+        headers=auth(token_cajero),
+        json={
+            "detalles": [
+                {"producto_id": p["id"], "cantidad": 1} for p in productos
+            ]
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    factura = resp.json()
+    orden_original = [d["id"] for d in factura["detalles"]]
+    assert orden_original == sorted(orden_original)
+
+    # Se cambia la cantidad de la línea del medio, la que más sufre al reordenar.
+    resp = client.put(
+        f"/api/facturas/{factura['id']}/items/{orden_original[1]}",
+        headers=auth(token_cajero),
+        json={"cantidad": 5},
+    )
+    assert resp.status_code == 200, resp.text
+    assert [d["id"] for d in resp.json()["detalles"]] == orden_original
+
+    resp = client.get(f"/api/facturas/{factura['id']}", headers=auth(token_cajero))
+    assert resp.status_code == 200, resp.text
+    assert [d["id"] for d in resp.json()["detalles"]] == orden_original
+
+
+def test_relacion_de_detalles_declara_orden_por_id():
+    """La relación debe ordenar en SQL, no depender del orden físico de la tabla."""
+    from app.db.models import Factura
+
+    assert Factura.detalles.property.order_by

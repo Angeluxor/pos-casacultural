@@ -315,7 +315,15 @@ class Factura(Base):
     turno = relationship("TurnoCaja")
     vendedor = relationship("Usuario", foreign_keys=[vendedor_id])
     anulada_por = relationship("Usuario", foreign_keys=[anulada_por_id])
-    detalles = relationship("DetalleFactura", back_populates="factura")
+    # Sin un orden explícito, PostgreSQL puede devolver las líneas en otro
+    # orden después de un UPDATE (cambiar una cantidad reescribe la tupla), y
+    # la tabla de la venta se reordena sola mientras el cajero la edita. Se
+    # fija el orden de inserción para que las filas no salten de sitio.
+    detalles = relationship(
+        "DetalleFactura",
+        back_populates="factura",
+        order_by="DetalleFactura.id",
+    )
     pagos = relationship("Pago", back_populates="factura")
 
     @property

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuth } from '../auth/useAuth'
+import { despertarServidor } from '../api/client'
 import {
   leerCola,
   normalizarCola,
@@ -22,6 +23,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const [enLinea, setEnLinea] = useState(
     () => typeof navigator === 'undefined' || navigator.onLine,
   )
+  const [servidorLento, setServidorLento] = useState(false)
   const [operaciones, setOperaciones] = useState<OperacionOffline[]>(() => leerCola())
   const [sincronizando, setSincronizando] = useState(false)
   const [ultimoError, setUltimoError] = useState<string | null>(null)
@@ -51,6 +53,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       } else {
         setEnLinea(true)
       }
+      setServidorLento(resultado.servidorLento)
       if (resultado.sincronizadas > 0) {
         setVersion((v) => v + 1)
       }
@@ -94,18 +97,25 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     }
     function alResponderServidor() {
       setEnLinea(true)
+      setServidorLento(false)
+    }
+    function alServidorLento() {
+      // Hay red, pero el servidor no contestó a tiempo: no es "sin conexión".
+      setServidorLento(true)
     }
 
     window.addEventListener('online', alVolverLaRed)
     window.addEventListener('offline', alPerderLaRed)
     window.addEventListener('pos:sin-conexion', alFallarPeticion)
     window.addEventListener('pos:conexion', alResponderServidor)
+    window.addEventListener('pos:servidor-lento', alServidorLento)
     window.addEventListener('pos:cola-cambiada', recargarCola)
     return () => {
       window.removeEventListener('online', alVolverLaRed)
       window.removeEventListener('offline', alPerderLaRed)
       window.removeEventListener('pos:sin-conexion', alFallarPeticion)
       window.removeEventListener('pos:conexion', alResponderServidor)
+      window.removeEventListener('pos:servidor-lento', alServidorLento)
       window.removeEventListener('pos:cola-cambiada', recargarCola)
     }
   }, [sincronizarAhora, recargarCola])
@@ -127,9 +137,35 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(timer)
   }, [usuario, sincronizarAhora])
 
+  // El backend free de Render se duerme tras unos minutos de inactividad. Al
+  // volver a la pestaña se despierta en segundo plano, antes de que el cajero
+  // pulse algo y su primera petición parezca un fallo de red.
+  useEffect(() => {
+    function alRecuperarFoco() {
+      if (document.visibilityState === 'visible') void despertarServidor()
+    }
+    document.addEventListener('visibilitychange', alRecuperarFoco)
+    window.addEventListener('focus', alRecuperarFoco)
+    return () => {
+      document.removeEventListener('visibilitychange', alRecuperarFoco)
+      window.removeEventListener('focus', alRecuperarFoco)
+    }
+  }, [])
+
+  // Mientras la app se crea offline, se comprueba cada pocos segundos si el
+  // servidor ya responde. Así el aviso desaparece solo, sin recargar.
+  useEffect(() => {
+    if (enLinea) return
+    const timer = window.setInterval(() => {
+      void despertarServidor()
+    }, 10_000)
+    return () => window.clearInterval(timer)
+  }, [enLinea])
+
   const value = useMemo(
     () => ({
       enLinea,
+      servidorLento,
       operaciones,
       pendientes: operaciones.length,
       sincronizando,
@@ -140,6 +176,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     }),
     [
       enLinea,
+      servidorLento,
       operaciones,
       sincronizando,
       ultimoError,

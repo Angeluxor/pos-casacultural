@@ -34,20 +34,39 @@ export type ApiOpciones = RequestInit & {
 // Sin límite, un fetch con la red móvil caída o un cold start de Render puede
 // dejar la UI en "Guardando…" indefinidamente.
 const TIEMPO_MAXIMO_MS = 30_000
+// El plan free de Render duerme el servicio tras unos minutos de inactividad.
+// La primera petición después de ese descanso (arranque en frío) puede tardar
+// bastante más que una petición normal; por eso el "despertar" tiene su propio
+// margen y no se confunde con una caída de red.
+const TIEMPO_MAXIMO_DESPERTAR_MS = 75_000
 
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
 export const setToken = (token: string): void => localStorage.setItem(TOKEN_KEY, token)
 export const clearToken = (): void => localStorage.removeItem(TOKEN_KEY)
 
-function notificarRed(evento: 'pos:sin-conexion' | 'pos:conexion'): void {
+function notificarRed(
+  evento: 'pos:sin-conexion' | 'pos:conexion' | 'pos:servidor-lento',
+): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(evento))
   }
 }
 
-/** Error de red o de disponibilidad: la operación puede reintentarse. */
+/**
+ * Error de red o de disponibilidad: la operación puede reintentarse o
+ * guardarse para enviarla luego.
+ *
+ * Incluye los timeouts a propósito: si el servidor no confirma una venta, lo
+ * seguro es encolarla con su clave de idempotencia. Distinguir "sin conexión"
+ * de "servidor lento" para la UI es responsabilidad de ``apiFetch``.
+ */
 export function esErrorRed(err: unknown): boolean {
   return err instanceof ApiError && (err.status === 0 || err.status >= 500)
+}
+
+/** La petición agotó el tiempo de espera (servidor lento o dormido). */
+export function esErrorTiempo(err: unknown): boolean {
+  return err instanceof ApiError && err.timeout
 }
 
 /** Error seguro de reintentar con la misma clave de idempotencia. */
@@ -83,15 +102,22 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
       if (signalExterno?.aborted) {
         throw new ApiError(0, 'La operación fue cancelada')
       }
-      // Un timeout o un fallo de red activa el modo offline de la UI. Cualquier
-      // respuesta posterior del servidor lo desactiva.
-      notificarRed('pos:sin-conexion')
       if (controller.signal.aborted) {
+        // Se agotó nuestro tiempo de espera. La red puede estar perfecta: el
+        // servidor simplemente no contestó (p. ej. arranque en frío). No se
+        // marca la app como "sin conexión".
+        notificarRed('pos:servidor-lento')
         throw new ApiError(
           0,
-          'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',
+          'El servidor tardó demasiado en responder. Reintentando…',
           true,
         )
+      }
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        notificarRed('pos:sin-conexion')
+      } else {
+        // Hay red, pero el servidor no responde: tampoco es "sin conexión".
+        notificarRed('pos:servidor-lento')
       }
       throw new ApiError(0, 'No se pudo conectar con el servidor')
     }
@@ -134,10 +160,10 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
       if (signalExterno?.aborted) {
         throw new ApiError(0, 'La operación fue cancelada')
       }
-      notificarRed('pos:sin-conexion')
+      notificarRed('pos:servidor-lento')
       throw new ApiError(
         0,
-        'La operación tardó demasiado. Revisa tu conexión e inténtalo de nuevo.',
+        'El servidor tardó demasiado en responder. Reintentando…',
         true,
       )
     }
@@ -145,6 +171,47 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
   } finally {
     if (timer) clearTimeout(timer)
   }
+}
+
+let despertandoServidor: Promise<boolean> | null = null
+
+/**
+ * Despierta al servidor con una petición ligera a ``/api/health``.
+ *
+ * El plan free de Render duerme el backend tras unos minutos sin tráfico. La
+ * primera petición después del descanso puede superar el timeout normal; si se
+ * tratara como "sin conexión" la UI mentiría al cajero. Este ping se hace al
+ * recuperar el foco y mientras la app se cree offline, con un margen mayor.
+ * Las llamadas concurrentes comparten la misma petición.
+ */
+export function despertarServidor(
+  timeoutMs = TIEMPO_MAXIMO_DESPERTAR_MS,
+): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false)
+  if (despertandoServidor) return despertandoServidor
+
+  despertandoServidor = (async () => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const res = await fetch(`${API_URL}/api/health`, {
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+      if (res.ok) {
+        notificarRed('pos:conexion')
+        return true
+      }
+      return false
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+      despertandoServidor = null
+    }
+  })()
+
+  return despertandoServidor
 }
 
 export async function apiBlob(path: string): Promise<Blob> {

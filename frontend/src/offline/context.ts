@@ -4,6 +4,8 @@ import type { ResultadoSincronizacion } from './sync'
 
 export type OfflineContexto = {
   enLinea: boolean
+  /** Hay red, pero el servidor no respondió a tiempo (arranque en frío). */
+  servidorLento: boolean
   operaciones: OperacionOffline[]
   pendientes: number
   sincronizando: boolean
@@ -18,6 +20,7 @@ const noop = async () => null
 
 export const OfflineContext = createContext<OfflineContexto>({
   enLinea: true,
+  servidorLento: false,
   operaciones: [],
   pendientes: 0,
   sincronizando: false,

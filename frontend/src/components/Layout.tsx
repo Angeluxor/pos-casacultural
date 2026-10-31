@@ -27,6 +27,7 @@ export function Layout() {
   const { usuario, logout, tienePermiso } = useAuth()
   const {
     enLinea,
+    servidorLento,
     pendientes,
     sincronizando,
     ultimoError,
@@ -137,7 +138,7 @@ export function Layout() {
       </aside>
 
       <main className="contenido">
-        {(!enLinea || pendientes > 0) && (
+        {(!enLinea || servidorLento || pendientes > 0) && (
           <div
             className={
               enLinea
@@ -148,14 +149,18 @@ export function Layout() {
           >
             <div>
               <strong>
-                {enLinea
-                  ? `${pendientes} operación(es) pendiente(s) de sincronizar`
-                  : 'Sin conexión'}
+                {!enLinea
+                  ? 'Sin conexión'
+                  : servidorLento
+                    ? 'El servidor está tardando'
+                    : `${pendientes} operación(es) pendiente(s) de sincronizar`}
               </strong>
               <span>
-                {enLinea
-                  ? ' Se enviarán automáticamente al recuperar la conexión.'
-                  : ' Puedes seguir vendiendo: las operaciones se guardan en este dispositivo.'}
+                {!enLinea
+                  ? ' Puedes seguir vendiendo: las operaciones se guardan en este dispositivo.'
+                  : servidorLento
+                    ? ' Hay red, pero el servidor no respondió a tiempo. Reintentando…'
+                    : ' Se enviarán automáticamente al recuperar la conexión.'}
               </span>
               {ultimoError && <small className="aviso-offline__error">{ultimoError}</small>}
             </div>
