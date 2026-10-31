@@ -7,8 +7,10 @@ import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider.tsx'
 import { OfflineProvider } from './offline/OfflineProvider.tsx'
 import { instalarCapturaErrores } from './lib/feedbackContext.ts'
+import { iniciarCapturaInstalacion } from './lib/instalarApp.ts'
 
 instalarCapturaErrores()
+iniciarCapturaInstalacion()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

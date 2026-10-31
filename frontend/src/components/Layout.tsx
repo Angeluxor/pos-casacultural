@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { APP_VERSION } from '../lib/version'
 import { useOffline } from '../offline/useOffline'
+import { useInstalacion } from '../lib/instalarApp'
 import { FeedbackWidget } from './FeedbackWidget'
 
 type Enlace = { to: string; label: string; end?: boolean; permiso: string }
@@ -36,6 +37,7 @@ export function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const { puedeInstalar, instalar } = useInstalacion()
 
   useEffect(() => {
     setMenuAbierto(false)
@@ -88,6 +90,16 @@ export function Layout() {
           <img src="/LogoCO-Photoroom.png" alt="Logo Casi Obsceno" className="logo" />
           <strong>Casi Obsceno</strong>
         </div>
+        {puedeInstalar && (
+          <button
+            type="button"
+            className="boton boton--mini"
+            onClick={() => void instalar()}
+            title="Instalar la aplicación en este dispositivo"
+          >
+            Instalar app
+          </button>
+        )}
         <span className="avatar avatar--mini">
           {usuario?.nombre?.charAt(0).toUpperCase()}
         </span>
