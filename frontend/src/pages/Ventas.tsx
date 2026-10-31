@@ -30,6 +30,7 @@ import { Vacio } from '../components/Vacio'
 import { useAuth } from '../auth/useAuth'
 import { usePaginacion } from '../lib/usePaginacion'
 import { useOffline } from '../offline/useOffline'
+import { crearEnvioCantidades, type EnvioCantidades } from '../lib/cantidadesEnLote'
 import {
   aplicarStockPendiente,
   eliminarOperacion,
@@ -1378,6 +1379,23 @@ function FormCobro({
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
+  // Cantidades cambiadas que aún no se envían: se muestran al instante y se
+  // envían en lote tras una pausa corta, para que varios toques seguidos sean
+  // una sola petición al servidor.
+  const [pendientes, setPendientes] = useState<Record<number, number>>({})
+  const hayPendientes = Object.keys(pendientes).length > 0
+  const enviarLineaRef = useRef<(detalleId: number, cantidad: number) => Promise<void>>(
+    async () => {},
+  )
+  const envioRef = useRef<EnvioCantidades | null>(null)
+  if (envioRef.current === null) {
+    envioRef.current = crearEnvioCantidades({
+      enviar: (detalleId, cantidad) => enviarLineaRef.current(detalleId, cantidad),
+      onCambio: setPendientes,
+      onError: (err) =>
+        setError(err instanceof Error ? err.message : 'No se pudo actualizar la cantidad'),
+    })
+  }
   const [anulando, setAnulando] = useState(false)
   const [mostrandoAnular, setMostrandoAnular] = useState(false)
   const [motivoAnular, setMotivoAnular] = useState(MOTIVOS_ANULACION[0])
@@ -1463,17 +1481,22 @@ function FormCobro({
     }
   }
 
-  async function cambiarCantidad(detalleId: number, cantidad: number) {
-    setError('')
-    setOcupado(true)
-    try {
-      aplicar(await actualizarItemFactura(f.id, detalleId, cantidad))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo actualizar la cantidad')
-    } finally {
-      setOcupado(false)
-    }
+  enviarLineaRef.current = async (detalleId, cantidad) => {
+    aplicar(await actualizarItemFactura(f.id, detalleId, cantidad))
   }
+
+  function cambiarCantidad(detalleId: number, cantidad: number) {
+    setError('')
+    envioRef.current?.cambiar(detalleId, cantidad)
+  }
+
+  // Al cerrar el diálogo se envían los cambios de cantidad que aún esperan.
+  useEffect(() => {
+    const envio = envioRef.current
+    return () => {
+      void envio?.vaciar()
+    }
+  }, [])
 
   async function quitar(detalleId: number, nombre: string) {
     if (!window.confirm(`¿Quitar «${nombre}» de la factura #${f.id}? Se reintegrará el stock.`))
@@ -1807,18 +1830,18 @@ function FormCobro({
                     <td data-label="Cant." className="derecha">
                       {editable ? (
                         <Stepper
-                          valor={d.cantidad}
+                          valor={pendientes[d.id] ?? d.cantidad}
                           min={(f.estado === 'Pagada' || f.estado === 'Crédito') ? d.cantidad : 1}
                           disabled={ocupado}
                           etiqueta={nombre}
-                          onCambiar={(n) => void cambiarCantidad(d.id, n)}
+                          onCambiar={(n) => cambiarCantidad(d.id, n)}
                         />
                       ) : (
                         d.cantidad
                       )}
                     </td>
                     <td data-label="Subtotal" className="derecha">
-                      {moneda.format(d.subtotal)}
+                      {moneda.format((pendientes[d.id] ?? d.cantidad) * d.precio_unitario)}
                     </td>
                     {editable && (
                       <td className="celda-accion">
@@ -1887,7 +1910,7 @@ function FormCobro({
               <button
                 type="submit"
                 className="boton"
-                disabled={guardando || ocupado || pagoBloqueadoPorItems}
+                disabled={guardando || ocupado || hayPendientes || pagoBloqueadoPorItems}
                 title={
                   pagoBloqueadoPorItems
                     ? 'Primero deben sincronizarse los ítems agregados sin conexión'
@@ -1919,7 +1942,7 @@ function FormCobro({
                   type="button"
                   className="boton boton--danger"
                   onClick={() => setMostrandoAnular(true)}
-                  disabled={anulando || ocupado}
+                  disabled={anulando || ocupado || hayPendientes}
                 >
                   Anular factura
                 </button>
@@ -1963,7 +1986,7 @@ function FormCobro({
                 type="button"
                 className="boton boton--danger"
                 onClick={() => void confirmarAnular()}
-                disabled={anulando || ocupado || (motivoAnular === 'Otro' && !motivoOtro.trim())}
+                disabled={anulando || ocupado || hayPendientes || (motivoAnular === 'Otro' && !motivoOtro.trim())}
               >
                 {anulando ? 'Anulando…' : 'Confirmar anulación'}
               </button>
