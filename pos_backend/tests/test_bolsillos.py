@@ -308,3 +308,15 @@ def test_dashboard_muestra_reservado_y_ventas_mes_a_mes(client, token_admin):
     assert mes_actual["cantidad"] == 1
     assert datos["caja"]["reservado"] == 30000
     assert datos["caja"]["disponible"] == 132000  # 150.000 + 12.000 - 30.000
+
+
+def test_dashboard_disponible_no_descuenta_saldo_inicial(client, token_admin):
+    _abrir_caja(client, token_admin, efectivo=100000, banco=50000)
+    # Saldo inicial: ya estaba apartado antes de usar la app, no sale de caja.
+    _crear_bolsillo(client, token_admin, saldo_inicial=50000)
+
+    dashboard = client.get("/api/dashboard/", headers=auth(token_admin))
+    assert dashboard.status_code == 200, dashboard.text
+    caja = dashboard.json()["caja"]
+    assert caja["reservado"] == 50000
+    assert caja["disponible"] == 150000  # 150.000 de caja; el inicial no descuenta

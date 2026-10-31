@@ -177,10 +177,9 @@ def resumen_dashboard(
     turno = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
     saldos_caja = crud_caja.saldos_actuales(db)
     reservado = bolsillos_service.total_reservado(db)
-    caja_total = round(
-        float(saldos_caja["efectivo"]) + float(saldos_caja["banco"]), 2
-    )
-    disponible = round(caja_total - reservado, 2)
+    # Solo el reservado que salió de caja/banco reduce el disponible; el saldo
+    # inicial de un bolsillo ya estaba apartado y no se descuenta.
+    disponible = bolsillos_service.caja_disponible(db)
 
     if turno:
         entradas, salidas = crud_caja.resumen_movimientos(db, turno.id)
