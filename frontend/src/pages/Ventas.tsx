@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
+  abonarSaldoCliente,
   actualizarItemFactura,
   agregarItemFactura,
   anularFactura,
@@ -8,10 +9,12 @@ import {
   eliminarItemFactura,
   ESTADOS_FACTURA,
   listarFacturasPaginado,
+  obtenerSaldoCliente,
   pagarFactura,
   type EstadoFactura,
   type Factura,
   type PaginaFacturas,
+  type SaldoCliente,
 } from '../api/ventas'
 import { listarProductos, type Producto } from '../api/productos'
 import { listarClientes, type Cliente } from '../api/clientes'
@@ -181,6 +184,7 @@ export function Ventas() {
 
   const [nuevaAbierta, setNuevaAbierta] = useState(false)
   const [cobrar, setCobrar] = useState<Factura | null>(null)
+  const [abonoAbierto, setAbonoAbierto] = useState(false)
   const [modoFactura, setModoFactura] = useState<'ver' | 'pagar'>('ver')
 
   const cargarCatalogo = useCallback(async () => {
@@ -279,6 +283,22 @@ export function Ventas() {
             {pendientes > 0 ? ` · ${pendientes} pendiente(s) de sincronizar` : ''}
           </p>
         </div>
+        {puedeCobrar && (
+          <button
+            className="boton boton--secundario"
+            onClick={() => setAbonoAbierto(true)}
+            disabled={!enLinea || !cajaActiva?.abierta}
+            title={
+              !enLinea
+                ? 'Abonar al saldo de un cliente requiere conexión'
+                : !cajaActiva?.abierta
+                  ? 'Necesitas una caja abierta para registrar abonos'
+                  : 'Paga de una vez todas las facturas pendientes de un cliente'
+            }
+          >
+            Abonar saldo de cliente
+          </button>
+        )}
         {puedeCrear && (
           <button
             className="boton"
@@ -552,6 +572,19 @@ export function Ventas() {
             setNuevaAbierta(false)
             setMensaje(aviso ?? '')
             if (enLinea) recargar()
+          }}
+        />
+      )}
+
+      {abonoAbierto && (
+        <FormAbonoCliente
+          clientes={clientes}
+          turnoId={cajaActiva?.abierta ? cajaActiva.id : null}
+          onCerrar={() => setAbonoAbierto(false)}
+          onGuardado={(aviso) => {
+            setAbonoAbierto(false)
+            setMensaje(aviso)
+            recargar()
           }}
         />
       )}
@@ -2002,6 +2035,263 @@ function FormCobro({
             </div>
           </div>
         )}
+      </form>
+    </div>
+  )
+}
+
+/**
+ * Abona al saldo pendiente de un cliente de una sola vez (ticket de feedback #11).
+ * El dinero se reparte de la factura más antigua a la más reciente.
+ */
+function FormAbonoCliente({
+  clientes,
+  turnoId,
+  onCerrar,
+  onGuardado,
+}: {
+  clientes: Cliente[]
+  turnoId: number | null
+  onCerrar: () => void
+  onGuardado: (aviso: string) => void
+}) {
+  const [buscarCliente, setBuscarCliente] = useState('')
+  const [cliente, setCliente] = useState<Cliente | null>(null)
+  const [saldo, setSaldo] = useState<SaldoCliente | null>(null)
+  const [cargandoSaldo, setCargandoSaldo] = useState(false)
+  const [monto, setMonto] = useState('')
+  const [pagos, setPagos] = useState<LineaPago[]>([{ forma_pago: 'Efectivo', valor: '' }])
+  const [error, setError] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const clave = useRef(crearClaveIdempotencia())
+
+  // Una clave nueva por cada intento distinto: si se cambia el monto o los
+  // medios tras un error, no debe confundirse con el intento anterior.
+  useEffect(() => {
+    clave.current = crearClaveIdempotencia()
+  }, [monto, pagos])
+
+  useEffect(() => {
+    setPagos((prev) => (prev.length === 1 ? [{ ...prev[0], valor: monto }] : prev))
+  }, [monto])
+
+  const resultados = useMemo(() => {
+    const q = buscarCliente.trim().toLowerCase()
+    if (!q) return []
+    return clientes
+      .filter(
+        (c) =>
+          c.nombre.toLowerCase().includes(q) ||
+          (c.celular ?? '').toLowerCase().includes(q) ||
+          (c.correo ?? '').toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+  }, [clientes, buscarCliente])
+
+  async function elegir(c: Cliente) {
+    setError('')
+    setCliente(c)
+    setBuscarCliente('')
+    setSaldo(null)
+    setCargandoSaldo(true)
+    try {
+      const s = await obtenerSaldoCliente(c.id)
+      setSaldo(s)
+      setMonto(s.saldo_total > 0 ? String(s.saldo_total) : '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo consultar el saldo del cliente')
+    } finally {
+      setCargandoSaldo(false)
+    }
+  }
+
+  async function abonar(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (!cliente || !saldo) return
+    const valor = round2(Number(monto))
+    if (!valor || valor <= 0 || valor > saldo.saldo_total) {
+      setError(
+        `El monto debe ser mayor a 0 y no superar el saldo del cliente (${moneda.format(saldo.saldo_total)})`,
+      )
+      return
+    }
+    if (pagos.some((p) => (Number(p.valor) || 0) <= 0)) {
+      setError('Cada medio de pago debe tener un valor mayor a 0')
+      return
+    }
+    const suma = round2(pagos.reduce((acc, p) => acc + (Number(p.valor) || 0), 0))
+    if (suma !== valor) {
+      setError('La suma de los medios de pago debe coincidir con el monto del abono')
+      return
+    }
+    if (!turnoId) {
+      setError('Necesitas una caja abierta para registrar el abono.')
+      return
+    }
+
+    setGuardando(true)
+    const enviar = () =>
+      abonarSaldoCliente(
+        cliente.id,
+        pagos.map((p) => ({ valor: Number(p.valor), forma_pago: p.forma_pago })),
+        { claveIdempotencia: clave.current, timeoutMs: 30_000 },
+      )
+    try {
+      let r
+      try {
+        r = await enviar()
+      } catch (err) {
+        if (!errorReintentable(err)) throw err
+        r = await enviar()
+      }
+      if (r.total_abonado === 0) {
+        onGuardado('Este abono ya estaba registrado; no se cobró de nuevo.')
+        return
+      }
+      onGuardado(
+        `Abono de ${moneda.format(r.total_abonado)} registrado para ${cliente.nombre}: ` +
+          `${r.facturas_pagadas} factura(s) saldada(s)` +
+          (r.saldo_restante > 0 ? `, quedan ${moneda.format(r.saldo_restante)} pendientes.` : '.'),
+      )
+    } catch (err) {
+      if (err instanceof ApiError && err.timeout) {
+        setError(
+          'No pudimos confirmar el abono por un problema de conexión. Revisa las facturas del cliente antes de reintentar: puede que ya esté registrado.',
+        )
+      } else if (esErrorRed(err)) {
+        setError('Sin conexión. El abono al saldo total del cliente requiere red; inténtalo de nuevo.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Error al registrar el abono')
+      }
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const valorAbono = Number(monto) || 0
+  const restante = saldo ? round2(Math.max(saldo.saldo_total - valorAbono, 0)) : 0
+
+  return (
+    <div className="modal-overlay modal-overlay--full" onClick={() => confirmarCierre(onCerrar)}>
+      <form className="modal modal--ancho" onClick={(e) => e.stopPropagation()} onSubmit={abonar}>
+        <h2>Abonar al saldo de un cliente</h2>
+        <p className="ayuda">
+          El abono se reparte entre las facturas pendientes del cliente, de la más antigua a la
+          más reciente.
+        </p>
+
+        {!cliente ? (
+          <div>
+            <label>
+              Cliente
+              <input
+                autoFocus
+                placeholder="Buscar por nombre, celular o correo…"
+                value={buscarCliente}
+                onChange={(e) => setBuscarCliente(e.target.value)}
+              />
+            </label>
+            {resultados.length > 0 && (
+              <ul className="lista-resultados">
+                {resultados.map((c) => (
+                  <li key={c.id}>
+                    <button type="button" onClick={() => void elegir(c)}>
+                      {c.nombre}
+                      {contactoSecundario(c) && <small> · {contactoSecundario(c)}</small>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {buscarCliente.trim() && resultados.length === 0 && (
+              <p className="ayuda">Sin coincidencias para «{buscarCliente.trim()}».</p>
+            )}
+          </div>
+        ) : (
+          <p className="ayuda">
+            Cliente: <strong>{cliente.nombre}</strong>{' '}
+            <button
+              type="button"
+              className="boton boton--mini boton--secundario"
+              disabled={guardando}
+              onClick={() => {
+                setCliente(null)
+                setSaldo(null)
+                setMonto('')
+                setError('')
+              }}
+            >
+              Cambiar
+            </button>
+          </p>
+        )}
+
+        {cargandoSaldo && <p className="ayuda">Consultando saldo…</p>}
+
+        {saldo && saldo.saldo_total <= 0 && (
+          <p className="ayuda">Este cliente no tiene saldo pendiente.</p>
+        )}
+
+        {saldo && saldo.saldo_total > 0 && (
+          <>
+            <p className="ayuda">
+              Saldo pendiente: <strong>{moneda.format(saldo.saldo_total)}</strong> en{' '}
+              {saldo.facturas.length} factura(s):{' '}
+              {saldo.facturas.map((f) => `#${f.id} (${moneda.format(f.saldo)})`).join(' · ')}
+            </p>
+            <div className="bloque-pago">
+              <label>
+                Monto del abono
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
+                />
+              </label>
+              <div className="acciones-fila">
+                <button
+                  type="button"
+                  className="boton boton--mini boton--secundario"
+                  onClick={() => setMonto(String(saldo.saldo_total))}
+                >
+                  Pagar todo el saldo
+                </button>
+              </div>
+              <MediosPago
+                total={valorAbono}
+                lineas={pagos}
+                onCambiar={setPagos}
+                disabled={guardando}
+              />
+              {valorAbono > 0 && valorAbono <= saldo.saldo_total && (
+                <p className="ayuda">
+                  Después del abono quedarán {moneda.format(restante)} pendientes.
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {error && <p className="error">{error}</p>}
+        <div className="acciones">
+          <span className="espaciador" />
+          <button
+            type="button"
+            className="boton boton--secundario"
+            onClick={onCerrar}
+            disabled={guardando}
+          >
+            Cerrar
+          </button>
+          {saldo && saldo.saldo_total > 0 && (
+            <button type="submit" className="boton" disabled={guardando}>
+              {guardando ? 'Registrando…' : 'Registrar abono'}
+            </button>
+          )}
+        </div>
       </form>
     </div>
   )

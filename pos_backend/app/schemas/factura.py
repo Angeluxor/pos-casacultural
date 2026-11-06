@@ -70,6 +70,43 @@ class PagoResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class AbonoClienteCreate(BaseModel):
+    """Abono al saldo total de un cliente, repartido entre sus facturas."""
+
+    cliente_id: int
+    pagos: List[PagoCreate]
+
+
+class FacturaSaldoCliente(BaseModel):
+    id: int
+    fecha: datetime
+    total: float
+    saldo: float
+    estado: EstadoFactura
+
+
+class SaldoClienteResponse(BaseModel):
+    cliente_id: int
+    cliente_nombre: str
+    saldo_total: float
+    facturas: List[FacturaSaldoCliente]
+
+
+class AbonoAplicado(BaseModel):
+    factura_id: int
+    valor: float
+    saldo_restante: float
+    estado: EstadoFactura
+
+
+class AbonoClienteResponse(BaseModel):
+    cliente_id: int
+    total_abonado: float
+    saldo_restante: float
+    facturas_pagadas: int
+    aplicados: List[AbonoAplicado]
+
+
 class FacturaResponse(BaseModel):
     id: int
     cliente_id: Optional[int]

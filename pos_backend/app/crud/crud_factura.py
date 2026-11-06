@@ -466,6 +466,190 @@ def registrar_pagos_factura(
     return _factura_con_relaciones(db, factura_id_guardada)
 
 
+def _facturas_con_saldo_cliente(db: Session, cliente_id: int, bloquear: bool = False):
+    """Facturas del cliente con saldo pendiente, de la más antigua a la más reciente."""
+    query = (
+        db.query(Factura)
+        .filter(
+            Factura.cliente_id == cliente_id,
+            Factura.saldo > 0,
+            Factura.estado.notin_([EstadoFactura.PAGADA, EstadoFactura.ANULADA]),
+        )
+        .order_by(Factura.fecha.asc(), Factura.id.asc())
+    )
+    if bloquear:
+        query = query.with_for_update()
+    return query.all()
+
+
+def saldo_pendiente_cliente(db: Session, cliente_id: int) -> dict:
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    facturas = _facturas_con_saldo_cliente(db, cliente_id)
+    return {
+        "cliente_id": cliente.id,
+        "cliente_nombre": cliente.nombre,
+        "saldo_total": round(sum(f.saldo for f in facturas), 2),
+        "facturas": facturas,
+    }
+
+
+def abonar_saldo_cliente(
+    db: Session,
+    cliente_id: int,
+    pagos: list[PagoCreate],
+    cajero_id: int,
+    clave_idempotencia: str | None = None,
+):
+    """Abona al saldo pendiente de un cliente repartiendo el dinero entre sus facturas.
+
+    Se salda primero la factura más antigua. Todo ocurre en una sola
+    transacción: o se aplican todos los pagos y movimientos de caja, o ninguno.
+    """
+    if not pagos:
+        raise HTTPException(status_code=400, detail="Debe registrar al menos un pago.")
+    if any(pago.forma_pago == FormaPago.NOMINA for pago in pagos):
+        raise HTTPException(
+            status_code=400,
+            detail="Los abonos por nómina se registran desde la sección de nómina del usuario.",
+        )
+    if any(pago.valor <= 0 for pago in pagos):
+        raise HTTPException(status_code=400, detail="Cada pago debe ser mayor a 0.")
+
+    clave = (clave_idempotencia or "").strip() or None
+    if clave and len(clave) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="La clave de idempotencia no puede superar 64 caracteres.",
+        )
+
+    def _respuesta_repetida():
+        # El abono ya se aplicó: se informa el estado actual sin volver a cobrar.
+        datos = saldo_pendiente_cliente(db, cliente_id)
+        return {
+            "cliente_id": cliente_id,
+            "total_abonado": 0.0,
+            "saldo_restante": datos["saldo_total"],
+            "facturas_pagadas": 0,
+            "aplicados": [],
+        }
+
+    if clave and db.query(PagoIdempotente).filter(PagoIdempotente.clave == clave).first():
+        return _respuesta_repetida()
+
+    caja_abierta = db.query(TurnoCaja).filter(TurnoCaja.abierta == True).first()
+    if not caja_abierta:
+        raise HTTPException(
+            status_code=400,
+            detail="No se pueden registrar pagos. No hay una caja abierta actualmente.",
+        )
+
+    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    facturas = _facturas_con_saldo_cliente(db, cliente_id, bloquear=True)
+    if clave and db.query(PagoIdempotente).filter(PagoIdempotente.clave == clave).first():
+        db.rollback()
+        return _respuesta_repetida()
+
+    saldo_total = round(sum(f.saldo for f in facturas), 2)
+    if not facturas:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="El cliente no tiene saldo pendiente.")
+    total = round(sum(p.valor for p in pagos), 2)
+    if total > saldo_total:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"El valor total de los pagos ({total}) excede el saldo pendiente del cliente ({saldo_total})",
+        )
+
+    for pago in pagos:
+        _fecha_operacion(pago.fecha)
+
+    if clave:
+        db.add(PagoIdempotente(clave=clave, factura_id=facturas[0].id))
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="No se pudo registrar el abono por un conflicto de concurrencia. Intenta de nuevo.",
+            )
+
+    # Reparto: se consume cada medio de pago, en orden, contra la factura más antigua.
+    restantes = [[pago, round(pago.valor, 2)] for pago in pagos]
+    aplicados = []
+    pagadas = 0
+    for factura in facturas:
+        por_cubrir = factura.saldo
+        abonado_factura = 0.0
+        for item in restantes:
+            if por_cubrir <= 0:
+                break
+            pago, disponible = item
+            if disponible <= 0:
+                continue
+            parte = round(min(disponible, por_cubrir), 2)
+            fecha_pago = _fecha_operacion(pago.fecha)
+            db.add(Pago(
+                factura_id=factura.id,
+                cajero_id=cajero_id,
+                fecha=fecha_pago,
+                valor=parte,
+                forma_pago=pago.forma_pago,
+            ))
+            db.add(RegistroCaja(
+                turno_caja_id=caja_abierta.id,
+                usuario_id=cajero_id,
+                fecha=fecha_pago,
+                tipo=TipoMovimientoCaja.ENTRADA,
+                referencia=f"Abono a Factura #{factura.id}",
+                forma_pago=pago.forma_pago,
+                monto=parte,
+                categoria=CATEGORIA_VENTAS,
+                observacion="Cobro de ventas (abono al saldo del cliente)",
+            ))
+            item[1] = round(disponible - parte, 2)
+            por_cubrir = round(por_cubrir - parte, 2)
+            abonado_factura = round(abonado_factura + parte, 2)
+        if abonado_factura <= 0:
+            break
+        factura.saldo = por_cubrir
+        if factura.saldo <= 0:
+            factura.saldo = 0
+            factura.estado = EstadoFactura.PAGADA
+            pagadas += 1
+        else:
+            factura.estado = EstadoFactura.PAGADO_PARCIAL
+        aplicados.append({
+            "factura_id": factura.id,
+            "valor": abonado_factura,
+            "saldo_restante": factura.saldo,
+            "estado": factura.estado,
+        })
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="No se pudo registrar el abono por un conflicto de concurrencia. Intenta de nuevo.",
+        )
+
+    return {
+        "cliente_id": cliente_id,
+        "total_abonado": total,
+        "saldo_restante": round(saldo_total - total, 2),
+        "facturas_pagadas": pagadas,
+        "aplicados": aplicados,
+    }
+
+
 def registrar_pago_factura(
     db: Session,
     factura_id: int,

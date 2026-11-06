@@ -13,6 +13,13 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ### Añadido
 
+- **Abonar al saldo total de un cliente** (ticket de feedback #11): el botón
+  «Abonar saldo de cliente» en Ventas permite pagar de una vez todas las
+  facturas pendientes de un cliente, con medios de pago combinados. El monto se
+  reparte de la factura más antigua a la más reciente (un abono parcial deja la
+  última como «Pagado Parcial»). Es atómico, idempotente y registra cada
+  movimiento en la caja abierta. Requiere conexión. Endpoints:
+  `GET /api/facturas/saldo-cliente/{id}` y `POST /api/facturas/abono-cliente`.
 - **Avisos de feedback por Telegram**: al entrar un ticket nuevo, el backend
   envía un mensaje con tipo, prioridad, autor, ruta, comentario y enlace a la
   bandeja. Es opcional y se activa con `TELEGRAM_BOT_TOKEN` y

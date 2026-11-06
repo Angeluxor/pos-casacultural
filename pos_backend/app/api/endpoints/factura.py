@@ -8,6 +8,9 @@ from app.db.session import get_db
 from app.db.models import Usuario, Cliente, EstadoFactura
 from app.api.deps import require_permiso
 from app.schemas.factura import (
+    AbonoClienteCreate,
+    AbonoClienteResponse,
+    SaldoClienteResponse,
     FacturaCreate,
     FacturaResponse,
     PagoCreate,
@@ -57,6 +60,31 @@ def registrar_pagos(
         clave_idempotencia=idempotency_key,
         turno_caja_id=turno_caja_id,
     )
+
+@router.get("/saldo-cliente/{cliente_id}", response_model=SaldoClienteResponse)
+def saldo_cliente(
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ventas.cobrar")),
+):
+    return crud_factura.saldo_pendiente_cliente(db, cliente_id)
+
+
+@router.post("/abono-cliente", response_model=AbonoClienteResponse)
+def abonar_cliente(
+    datos: AbonoClienteCreate,
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_permiso("ventas.cobrar")),
+):
+    return crud_factura.abonar_saldo_cliente(
+        db=db,
+        cliente_id=datos.cliente_id,
+        pagos=datos.pagos,
+        cajero_id=current_user.id,
+        clave_idempotencia=idempotency_key,
+    )
+
 
 @router.get("/", response_model=PaginaFacturas)
 def listar_facturas(

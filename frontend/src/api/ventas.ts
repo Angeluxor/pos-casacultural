@@ -163,6 +163,48 @@ export function pagarFactura(
   })
 }
 
+export type SaldoCliente = {
+  cliente_id: number
+  cliente_nombre: string
+  saldo_total: number
+  facturas: { id: number; fecha: string; total: number; saldo: number; estado: EstadoFactura }[]
+}
+
+export type AbonoClienteResultado = {
+  cliente_id: number
+  total_abonado: number
+  saldo_restante: number
+  facturas_pagadas: number
+  aplicados: {
+    factura_id: number
+    valor: number
+    saldo_restante: number
+    estado: EstadoFactura
+  }[]
+}
+
+export function obtenerSaldoCliente(clienteId: number): Promise<SaldoCliente> {
+  return apiFetch<SaldoCliente>(`/api/facturas/saldo-cliente/${clienteId}`)
+}
+
+/** Abona al saldo total de un cliente; se reparte de la factura más antigua a la más reciente. */
+export function abonarSaldoCliente(
+  clienteId: number,
+  pagos: PagoCreate[],
+  opciones: CrearFacturaOpciones = {},
+): Promise<AbonoClienteResultado> {
+  const headers = new Headers()
+  if (opciones.claveIdempotencia) {
+    headers.set('Idempotency-Key', opciones.claveIdempotencia)
+  }
+  return apiJson<AbonoClienteResultado>(
+    '/api/facturas/abono-cliente',
+    'POST',
+    { cliente_id: clienteId, pagos },
+    { headers, timeoutMs: opciones.timeoutMs },
+  )
+}
+
 export function anularFactura(id: number, motivo?: string): Promise<Factura> {
   return apiJson<Factura>(`/api/facturas/${id}/anular`, 'POST', { motivo: motivo ?? null })
 }
