@@ -1,3 +1,5 @@
+import { registrarMuestra } from '../lib/metricasCliente'
+
 // En producción usamos la URL configurada en Vercel. En los previews de
 // Vercel preferimos el proxy /api del propio despliegue (ver vercel.json):
 // así el navegador no hace una petición cross-origin y el preview no depende
@@ -89,6 +91,9 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
   }
   const timer =
     timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
+  // Medición para diagnosticar lentitud: 0 = sin respuesta (timeout o red).
+  const inicioMedida = performance.now()
+  let estadoMedido = 0
 
   try {
     let res: Response
@@ -124,6 +129,7 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
 
     // Llegó una respuesta HTTP (aunque sea de error): hay conexión.
     notificarRed('pos:conexion')
+    estadoMedido = res.status
 
     if (res.status === 401) {
       clearToken()
@@ -170,6 +176,12 @@ export async function apiFetch<T>(path: string, options: ApiOpciones = {}): Prom
     throw err
   } finally {
     if (timer) clearTimeout(timer)
+    registrarMuestra(
+      init.method ?? 'GET',
+      path,
+      estadoMedido,
+      performance.now() - inicioMedida,
+    )
   }
 }
 

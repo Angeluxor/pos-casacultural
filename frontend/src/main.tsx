@@ -8,9 +8,16 @@ import { AuthProvider } from './auth/AuthProvider.tsx'
 import { OfflineProvider } from './offline/OfflineProvider.tsx'
 import { instalarCapturaErrores } from './lib/feedbackContext.ts'
 import { iniciarCapturaInstalacion } from './lib/instalarApp.ts'
+import { getToken } from './api/client.ts'
+import { enviarMuestrasCliente } from './api/metricas.ts'
+import { iniciarMetricasCliente } from './lib/metricasCliente.ts'
 
 instalarCapturaErrores()
 iniciarCapturaInstalacion()
+// Tiempos de respuesta vistos por el navegador, para diagnosticar lentitud.
+iniciarMetricasCliente(async (lote) => {
+  if (getToken()) await enviarMuestrasCliente(lote)
+})
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

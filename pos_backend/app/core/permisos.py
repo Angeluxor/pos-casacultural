@@ -100,6 +100,10 @@ CATALOGO: List[Tuple[str, List[Tuple[str, str]]]] = [
             ("feedback.gestionar", "Revisar y gestionar el feedback del equipo"),
         ],
     ),
+    (
+        "Rendimiento",
+        [("metricas.ver", "Ver las métricas de rendimiento de la aplicación")],
+    ),
     ("Usuarios", [("usuarios.gestionar", "Gestionar usuarios")]),
     (
         "Nómina",

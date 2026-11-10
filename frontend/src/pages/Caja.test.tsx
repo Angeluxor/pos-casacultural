@@ -4,10 +4,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TurnoCaja } from '../api/caja'
 
-const { obtenerCajaActivaMock, obtenerMovimientosMock } = vi.hoisted(() => ({
-  obtenerCajaActivaMock: vi.fn(),
-  obtenerMovimientosMock: vi.fn(),
-}))
+const { obtenerCajaActivaMock, obtenerMovimientosMock, registrarTrasladoMock } = vi.hoisted(
+  () => ({
+    obtenerCajaActivaMock: vi.fn(),
+    obtenerMovimientosMock: vi.fn(),
+    registrarTrasladoMock: vi.fn(),
+  }),
+)
 
 vi.mock('../auth/useAuth', () => ({
   useAuth: () => ({ tienePermiso: () => true }),
@@ -25,6 +28,7 @@ vi.mock('../api/caja', async (importOriginal) => {
     obtenerMovimientos: obtenerMovimientosMock,
     obtenerResumenVentasTurno: vi.fn(),
     registrarMovimiento: vi.fn(),
+    registrarTraslado: registrarTrasladoMock,
   }
 })
 
@@ -110,5 +114,26 @@ describe('Caja', () => {
     expect(screen.getAllByText('Arriendo').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/20\.000/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/15\.000/).length).toBeGreaterThan(0)
+  })
+
+  it('registra un traslado de banco a efectivo', async () => {
+    registrarTrasladoMock.mockResolvedValue({})
+    render(
+      <MemoryRouter>
+        <Caja />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Turno #1 abierto')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Traslado efectivo/ }))
+    expect(screen.getByLabelText('Destino')).toHaveValue('Efectivo')
+    await userEvent.type(screen.getByLabelText('Monto'), '100000')
+    await userEvent.click(screen.getByRole('button', { name: 'Registrar traslado' }))
+
+    expect(registrarTrasladoMock).toHaveBeenCalledWith({
+      origen: 'Banco',
+      monto: 100000,
+      referencia: undefined,
+    })
   })
 })

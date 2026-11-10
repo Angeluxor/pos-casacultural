@@ -17,6 +17,7 @@ import { Caja } from './pages/Caja'
 import { Ingresos } from './pages/Ingresos'
 import { Proveedores } from './pages/Proveedores'
 import { Feedback } from './pages/Feedback'
+import { Rendimiento } from './pages/Rendimiento'
 import { Perfil } from './pages/Perfil'
 
 /**
@@ -36,6 +37,7 @@ function Inicio() {
   if (tienePermiso('reportes.ver')) return <Navigate to="/reportes" replace />
   if (tienePermiso('balance.ver')) return <Navigate to="/balance" replace />
   if (tienePermiso('feedback.gestionar')) return <Navigate to="/feedback" replace />
+  if (tienePermiso('metricas.ver')) return <Navigate to="/rendimiento" replace />
   if (tienePermiso('usuarios.gestionar')) return <Navigate to="/usuarios" replace />
   if (tienePermiso('permisos.gestionar')) return <Navigate to="/permisos" replace />
   return <Navigate to="/perfil" replace />
@@ -125,6 +127,14 @@ export default function App() {
             element={
               <PermisoRoute permiso="feedback.gestionar">
                 <Feedback />
+              </PermisoRoute>
+            }
+          />
+          <Route
+            path="rendimiento"
+            element={
+              <PermisoRoute permiso="metricas.ver">
+                <Rendimiento />
               </PermisoRoute>
             }
           />

@@ -17,6 +17,7 @@ from app.core.orden import ordenar
 from app.core.categorias_caja import (
     CATEGORIA_APERTURA,
     CATEGORIA_CIERRE,
+    CATEGORIA_TRASLADO,
     normalizar_categoria,
 )
 
@@ -289,6 +290,51 @@ def registrar_movimiento(db: Session, turno_id: int, movimiento: RegistroCajaCre
     db.commit()
     db.refresh(db_movimiento)
     return db_movimiento
+
+def registrar_traslado(db: Session, turno_id: int, datos, usuario_id: int):
+    """Mueve dinero entre efectivo y banco con dos movimientos enlazados.
+
+    Se guarda una Salida del bolsillo de origen y una Entrada en el de destino,
+    en la misma transacción y con la misma referencia. El total (efectivo +
+    banco) no cambia; solo se reparte distinto. La categoría «Traslado» los
+    excluye de gastos y de ventas por forma de pago.
+    """
+    origen_efectivo = datos.origen == "Efectivo"
+    forma_origen = FormaPago.EFECTIVO if origen_efectivo else FormaPago.TRANSFERENCIA
+    forma_destino = FormaPago.TRANSFERENCIA if origen_efectivo else FormaPago.EFECTIVO
+    destino = "Banco" if origen_efectivo else "Efectivo"
+    referencia = (datos.referencia or "").strip() or (
+        f"Traslado de {datos.origen.lower()} a {destino.lower()}"
+    )
+    monto = round(float(datos.monto), 2)
+    observacion = (datos.observacion or "").strip() or None
+    comunes = dict(
+        turno_caja_id=turno_id,
+        usuario_id=usuario_id,
+        referencia=referencia,
+        monto=monto,
+        categoria=CATEGORIA_TRASLADO,
+        observacion=observacion,
+    )
+    salida = RegistroCaja(
+        tipo=TipoMovimientoCaja.SALIDA, forma_pago=forma_origen, **comunes
+    )
+    entrada = RegistroCaja(
+        tipo=TipoMovimientoCaja.ENTRADA, forma_pago=forma_destino, **comunes
+    )
+    db.add_all([salida, entrada])
+    db.commit()
+    db.refresh(salida)
+    db.refresh(entrada)
+    return {
+        "referencia": referencia,
+        "origen": datos.origen,
+        "destino": destino,
+        "monto": monto,
+        "salida": salida,
+        "entrada": entrada,
+    }
+
 
 def obtener_movimientos(
     db: Session, turno_id: int, categoria: str | None = None

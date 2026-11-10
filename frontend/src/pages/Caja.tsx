@@ -10,7 +10,9 @@ import {
   obtenerMovimientos,
   obtenerResumenVentasTurno,
   registrarMovimiento,
+  registrarTraslado,
   categoriasDe,
+  type OrigenTraslado,
   type FacturaPendienteCierre,
   type RegistroCaja,
   type ResumenVentasTurno,
@@ -111,6 +113,7 @@ export function Caja() {
   const [error, setError] = useState('')
   const [abrirModal, setAbrirModal] = useState(false)
   const [movModal, setMovModal] = useState(false)
+  const [trasladoModal, setTrasladoModal] = useState(false)
   const [cerrarModal, setCerrarModal] = useState(false)
   const [histModal, setHistModal] = useState(false)
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas')
@@ -245,6 +248,18 @@ export function Caja() {
                     disabled={!enLinea}
                   >
                     Registrar movimiento
+                  </button>
+                  <button
+                    className="boton boton--secundario"
+                    onClick={() => setTrasladoModal(true)}
+                    disabled={!enLinea}
+                    title={
+                      enLinea
+                        ? 'Pasar dinero de efectivo a banco o al revés'
+                        : 'Los traslados requieren conexión'
+                    }
+                  >
+                    Traslado efectivo ↔ banco
                   </button>
                   <button
                     className="boton boton--danger"
@@ -489,6 +504,18 @@ export function Caja() {
         />
       )}
 
+      {trasladoModal && (
+        <FormTraslado
+          esperadoEfectivo={esperadoEfectivo}
+          esperadoBanco={esperadoBanco}
+          onCerrar={() => setTrasladoModal(false)}
+          onGuardado={() => {
+            setTrasladoModal(false)
+            void cargar()
+          }}
+        />
+      )}
+
       {cerrarModal && turno && (
         <FormCerrar
           turno={turno}
@@ -711,6 +738,112 @@ function FormMovimiento({ onCerrar, onGuardado }: { onCerrar: () => void; onGuar
           </button>
           <button type="submit" className="boton" disabled={guardando}>
             {guardando ? 'Guardando…' : 'Registrar'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function FormTraslado({
+  esperadoEfectivo,
+  esperadoBanco,
+  onCerrar,
+  onGuardado,
+}: {
+  esperadoEfectivo: number
+  esperadoBanco: number
+  onCerrar: () => void
+  onGuardado: () => void
+}) {
+  const [origen, setOrigen] = useState<OrigenTraslado>('Banco')
+  const [monto, setMonto] = useState('')
+  const [referencia, setReferencia] = useState('')
+  const [error, setError] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const destino: OrigenTraslado = origen === 'Banco' ? 'Efectivo' : 'Banco'
+  const disponibleOrigen = origen === 'Banco' ? esperadoBanco : esperadoEfectivo
+  const valor = Number(monto)
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError('')
+    if (!valor || valor <= 0) {
+      setError('El monto debe ser mayor a 0')
+      return
+    }
+    setGuardando(true)
+    try {
+      await registrarTraslado({
+        origen,
+        monto: valor,
+        referencia: referencia.trim() || undefined,
+      })
+      onGuardado()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al registrar el traslado')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={() => confirmarCierre(onCerrar)}>
+      <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={onSubmit}>
+        <h2>Traslado efectivo ↔ banco</h2>
+        {error && <p className="error">{error}</p>}
+        <p className="ayuda">
+          Mueve dinero de un lado al otro sin contarlo como ingreso ni gasto. Útil, por
+          ejemplo, cuando retiras del banco para un gasto y el vuelto queda en efectivo
+          pero debe volver al banco.
+        </p>
+        <div className="fila-campos">
+          <label>
+            Sale de
+            <select
+              value={origen}
+              onChange={(e) => setOrigen(e.target.value as OrigenTraslado)}
+            >
+              <option value="Banco">Banco</option>
+              <option value="Efectivo">Efectivo</option>
+            </select>
+          </label>
+          <label>
+            Pasa a
+            <input value={destino} readOnly aria-label="Destino" />
+          </label>
+        </div>
+        <label>
+          Monto
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={monto}
+            onChange={(e) => setMonto(e.target.value)}
+          />
+        </label>
+        <p className="ayuda">
+          Esperado en {origen.toLowerCase()}: {moneda.format(disponibleOrigen)}
+          {valor > disponibleOrigen && (
+            <> — el traslado es mayor a lo esperado en {origen.toLowerCase()}.</>
+          )}
+        </p>
+        <label>
+          Concepto (opcional)
+          <input
+            value={referencia}
+            onChange={(e) => setReferencia(e.target.value)}
+            placeholder="Ej.: Vuelto del gasto de proveedores"
+          />
+        </label>
+        <div className="acciones">
+          <button type="button" className="boton boton--secundario" onClick={onCerrar}>
+            Cancelar
+          </button>
+          <button type="submit" className="boton" disabled={guardando}>
+            {guardando ? 'Guardando…' : 'Registrar traslado'}
           </button>
         </div>
       </form>

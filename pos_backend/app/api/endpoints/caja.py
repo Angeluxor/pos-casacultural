@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.db.session import get_db
 from app.db.models import Usuario
 from app.api.deps import require_permiso
-from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse, FacturaPendienteCierre, ResumenVentasTurno
+from app.schemas.caja import TurnoCajaCreate, TurnoCajaUpdate, TurnoCajaResponse, TurnoCajaHistorial, RegistroCajaCreate, RegistroCajaResponse, TrasladoCreate, TrasladoResponse, FacturaPendienteCierre, ResumenVentasTurno
 from app.schemas.common import Pagina
 from app.crud import crud_caja
 
@@ -57,6 +57,14 @@ def registrar_movimiento(movimiento: RegistroCajaCreate, db: Session = Depends(g
         raise HTTPException(status_code=400, detail="Debe abrir la caja antes de registrar movimientos de dinero.")
     
     return crud_caja.registrar_movimiento(db=db, turno_id=caja_activa.id, movimiento=movimiento, usuario_id=current_user.id)
+
+@router.post("/traslados", response_model=TrasladoResponse)
+def registrar_traslado(datos: TrasladoCreate, db: Session = Depends(get_db), current_user: Usuario = Depends(require_permiso("caja.operar"))):
+    """Pasa dinero entre efectivo y banco sin contarlo como ingreso ni gasto."""
+    caja_activa = crud_caja.obtener_caja_abierta(db)
+    if not caja_activa:
+        raise HTTPException(status_code=400, detail="Debe abrir la caja antes de registrar traslados de dinero.")
+    return crud_caja.registrar_traslado(db=db, turno_id=caja_activa.id, datos=datos, usuario_id=current_user.id)
 
 @router.get("/{turno_id}/movimientos", response_model=List[RegistroCajaResponse])
 def obtener_movimientos_caja(

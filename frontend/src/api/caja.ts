@@ -114,6 +114,29 @@ export function registrarMovimiento(data: MovimientoCajaCreate): Promise<Registr
   return apiJson<RegistroCaja>('/api/caja/movimientos', 'POST', data)
 }
 
+export type OrigenTraslado = 'Efectivo' | 'Banco'
+
+export type TrasladoCreate = {
+  origen: OrigenTraslado
+  monto: number
+  referencia?: string
+  observacion?: string
+}
+
+export type TrasladoResultado = {
+  referencia: string
+  origen: OrigenTraslado
+  destino: OrigenTraslado
+  monto: number
+  salida: RegistroCaja
+  entrada: RegistroCaja
+}
+
+/** Pasa dinero entre efectivo y banco sin contarlo como ingreso ni gasto. */
+export function registrarTraslado(data: TrasladoCreate): Promise<TrasladoResultado> {
+  return apiJson<TrasladoResultado>('/api/caja/traslados', 'POST', data)
+}
+
 export function obtenerMovimientos(
   turnoId: number,
   opciones: { timeoutMs?: number } = {},

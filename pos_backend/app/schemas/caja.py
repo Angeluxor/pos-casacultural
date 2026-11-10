@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Literal, Optional
 from app.db.models import FormaPago, TipoMovimientoCaja
 
 class TurnoCajaBase(BaseModel):
@@ -60,6 +60,15 @@ class RegistroCajaCreate(RegistroCajaBase):
     # No pedimos turno_caja_id porque el endpoint lo deduce de la caja que esté abierta actualmente.
     # Tampoco exigimos usuario_id: se toma del token autenticado.
 
+class TrasladoCreate(BaseModel):
+    """Pasa dinero de efectivo a banco (o al revés) dentro del turno abierto."""
+
+    origen: Literal["Efectivo", "Banco"]
+    monto: float = Field(gt=0)
+    referencia: Optional[str] = Field(default=None, max_length=200)
+    observacion: Optional[str] = Field(default=None, max_length=500)
+
+
 class RegistroCajaResponse(RegistroCajaBase):
     id: int
     turno_caja_id: int
@@ -88,3 +97,12 @@ class ResumenVentasTurno(BaseModel):
     ventas: float
     creditos: float
     cobrado: float
+
+
+class TrasladoResponse(BaseModel):
+    referencia: str
+    origen: str
+    destino: str
+    monto: float
+    salida: RegistroCajaResponse
+    entrada: RegistroCajaResponse

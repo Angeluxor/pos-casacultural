@@ -48,6 +48,8 @@ CATEGORIA_PAGO_PROVEEDOR = "Pago a proveedor"
 CATEGORIA_DEVOLUCION = "Devolución"
 CATEGORIA_APERTURA = "Apertura"
 CATEGORIA_CIERRE = "Cierre"
+# Mueve dinero entre efectivo y banco: no es ingreso ni gasto del negocio.
+CATEGORIA_TRASLADO = "Traslado"
 
 
 def categorias_manuales(tipo: TipoMovimientoCaja) -> List[str]:

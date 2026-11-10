@@ -486,6 +486,33 @@ class Configuracion(Base):
         nullable=False,
     )
 
+class MetricaHttp(Base):
+    """Muestra de rendimiento de una petición (ver ``app.core.metricas``).
+
+    ``origen`` distingue lo medido por el servidor de lo medido por el
+    navegador (que incluye red y arranques en frío del hosting).
+    """
+
+    __tablename__ = "metricas_http"
+
+    id = Column(Integer, primary_key=True)
+    creado_en = Column(
+        DateTime(timezone=True), default=get_colombia_time, nullable=False, index=True
+    )
+    origen = Column(String(10), nullable=False, default="servidor")
+    metodo = Column(String(8), nullable=False)
+    ruta = Column(String(160), nullable=False, index=True)
+    estado = Column(Integer, nullable=False)
+    ms_total = Column(Float, nullable=False)
+    ms_db = Column(Float, nullable=False, default=0.0)
+    consultas = Column(Integer, nullable=False, default=0)
+    conexiones_nuevas = Column(Integer, nullable=False, default=0)
+    # Segundos sin tráfico antes de esta petición (solo servidor).
+    inactivo_s = Column(Float, nullable=True)
+    primera_tras_arranque = Column(Boolean, nullable=False, default=False)
+    # Tipo de red que reportó el navegador (4g, 3g, ...); solo cliente.
+    conexion = Column(String(16), nullable=True)
+
 class Bolsillo(Base):
     """Bolsillo virtual para apartar dinero de la liquidez diaria.
 

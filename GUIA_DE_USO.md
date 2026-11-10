@@ -210,6 +210,16 @@ Los movimientos automáticos también reciben una categoría para que el resumen
 
 > Un aporte cultural **no es una venta**: no aparece en Reportes de ventas. En el Balance aumenta el efectivo o el banco (y el patrimonio residual), pero no la utilidad del período.
 
+### Traslado efectivo ↔ banco
+
+Usa **Traslado efectivo ↔ banco** cuando el dinero cambia de lugar pero no es un ingreso ni un gasto. Ejemplo: retiras 100.000 del banco para pagar unas compras, te dan vuelto en efectivo y ese vuelto debe volver al banco. Elige de dónde **sale** el dinero, escribe el monto (y un concepto si quieres) y registra. El sistema descuenta de un lado y suma al otro; el total de la caja no cambia.
+
+Los traslados aparecen con la categoría **Traslado**, no cuentan como gasto en el Balance ni como venta en los reportes, y sí se tienen en cuenta en el saldo esperado de efectivo y banco al cerrar.
+
+### Rendimiento (solo administradores)
+
+La pantalla **Rendimiento** muestra qué tan rápido responde la aplicación: tiempos típicos (p50) y de las peticiones más lentas (p95) por pantalla, las peticiones de 2 segundos o más y un diagnóstico automático que indica si la lentitud viene del arranque del servidor tras un descanso, de la base de datos o de la red del dispositivo. Los datos se acumulan mientras el equipo usa la app; revísala después de unos días de uso normal.
+
 ### Cerrar caja
 
 1. Presiona **Cerrar caja**.

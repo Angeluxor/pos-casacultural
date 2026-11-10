@@ -30,6 +30,7 @@ from typing import Optional
 from sqlalchemy import func, not_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.categorias_caja import CATEGORIA_TRASLADO
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.crud import crud_caja
 from app.services import bolsillos
@@ -198,6 +199,8 @@ def _resultados(
                     "Pago ingreso #%"
                 )
             ),
+            # Un traslado efectivo ↔ banco solo cambia de bolsillo el dinero.
+            func.coalesce(RegistroCaja.categoria, "") != CATEGORIA_TRASLADO,
             # La devolución de una factura anulada no es un gasto: la venta
             # tampoco se reconoce en los ingresos del período.
             not_(

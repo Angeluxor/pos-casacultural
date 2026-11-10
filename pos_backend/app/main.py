@@ -1,3 +1,4 @@
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -6,7 +7,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from app.db.migraciones import inicializar_esquema
+from app.core import metricas as metricas_core
 from app.core.config import CORS_ORIGINS, validar_configuracion
+from app.core.metricas import MetricasMiddleware
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 
@@ -14,7 +17,7 @@ from app.core.security_headers import SecurityHeadersMiddleware
 from app.db import models  # noqa: F401
 
 # Importar routers
-from app.api.endpoints import auth, balance, caja, usuario, producto, factura, cliente, dashboard, reportes, ingreso, permiso, proveedor, costos, feedback
+from app.api.endpoints import auth, balance, caja, usuario, producto, factura, cliente, dashboard, reportes, ingreso, permiso, proveedor, costos, feedback, metricas
 
 
 @asynccontextmanager
@@ -22,8 +25,14 @@ async def lifespan(_app: FastAPI):
     # Valida variables sensibles (SECRET_KEY, etc.) al arrancar.
     validar_configuracion()
     # Deja el esquema al día con Alembic (crea/actualiza tablas si hace falta).
+    inicio = time.perf_counter()
     inicializar_esquema()
-    yield
+    metricas_core.registrar_arranque((time.perf_counter() - inicio) * 1000.0)
+    metricas_core.iniciar_volcado()
+    try:
+        yield
+    finally:
+        metricas_core.detener_volcado()
 
 
 app = FastAPI(
@@ -46,6 +55,9 @@ app.add_middleware(
 app.add_middleware(SecurityHeadersMiddleware)
 # Tope global de peticiones por IP (el login tiene además su propio límite).
 app.add_middleware(RateLimitMiddleware)
+# Mide el tiempo de cada petición (se añade al final para quedar como la capa
+# más externa y contar también el trabajo de los demás middlewares).
+app.add_middleware(MetricasMiddleware)
 
 # Incluir rutas de la API
 app.include_router(auth.router, prefix="/api/auth", tags=["Autenticación"])
@@ -61,6 +73,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"]
 app.include_router(reportes.router, prefix="/api/reportes", tags=["Reportes"])
 app.include_router(balance.router, prefix="/api/balance", tags=["Balance"])
 app.include_router(permiso.router, prefix="/api/permisos", tags=["Permisos"])
+app.include_router(metricas.router, prefix="/api/metricas", tags=["Métricas"])
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
 
 

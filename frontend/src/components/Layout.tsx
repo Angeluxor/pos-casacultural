@@ -20,6 +20,7 @@ const enlaces: Enlace[] = [
   { to: '/reportes', label: 'Reportes', permiso: 'reportes.ver' },
   { to: '/balance', label: 'Balance', permiso: 'balance.ver' },
   { to: '/feedback', label: 'Feedback', permiso: 'feedback.gestionar' },
+  { to: '/rendimiento', label: 'Rendimiento', permiso: 'metricas.ver' },
   { to: '/usuarios', label: 'Usuarios', permiso: 'usuarios.gestionar' },
   { to: '/permisos', label: 'Permisos', permiso: 'permisos.gestionar' },
 ]

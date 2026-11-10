@@ -20,6 +20,7 @@ from app.db.models import (
     Usuario,
 )
 from app.api.deps import require_permiso
+from app.core.categorias_caja import CATEGORIA_TRASLADO
 from app.core.timezone import BOGOTA_TZ, get_colombia_time
 from app.crud import crud_caja, crud_nomina
 from app.schemas.reportes import (
@@ -387,6 +388,7 @@ def _datos_caja(db: Session, desde: str | None, hasta: str | None) -> ReporteCaj
             .filter(
                 RegistroCaja.turno_caja_id == t.id,
                 RegistroCaja.tipo == TipoMovimientoCaja.ENTRADA,
+                func.coalesce(RegistroCaja.categoria, "") != CATEGORIA_TRASLADO,
             )
             .group_by(RegistroCaja.forma_pago)
             .all()

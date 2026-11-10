@@ -26,6 +26,9 @@ if not _ES_SQLITE:
     )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, **_opciones_engine)
+from app.core.metricas import instrumentar_motor  # noqa: E402
+
+instrumentar_motor(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 if not _ES_SQLITE:

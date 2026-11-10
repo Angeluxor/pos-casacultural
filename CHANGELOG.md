@@ -13,6 +13,23 @@ internos de desarrollo; no existen tags publicados de esas versiones.
 
 ### Añadido
 
+- **Traslado efectivo ↔ banco** (ticket de feedback #13): el botón «Traslado
+  efectivo ↔ banco» en Caja mueve dinero de un bolsillo al otro dentro del turno
+  abierto (por ejemplo, el vuelto de un gasto pagado con un retiro del banco).
+  Guarda una Salida y una Entrada enlazadas con categoría «Traslado», en la misma
+  transacción. El total no cambia; solo el reparto. No cuenta como gasto en el
+  Balance ni como venta por forma de pago en Reportes. Endpoint:
+  `POST /api/caja/traslados` (permiso `caja.operar`). Requiere conexión.
+- **Métricas de rendimiento** (ticket de feedback #12): cada petición registra su
+  tiempo total, el tiempo en base de datos, el número de consultas, las
+  conexiones nuevas a la BD y la inactividad previa del servidor; el navegador
+  envía además lo que realmente espera cada llamada (incluye red y arranques en
+  frío de Render). La pantalla **Rendimiento** (permiso `metricas.ver`, solo
+  Admin por defecto) muestra p50/p95 por ruta, las peticiones lentas y un
+  diagnóstico automático (arranque en frío, base de datos, N+1, código o red).
+  Las lentas (2 s o más) también salen en el log de Render. Las muestras se
+  guardan en `metricas_http` (migración 0024) por lotes, sin añadir latencia a
+  la petición, y se purgan a los 30 días. `/api/health` no se registra.
 - **Abonar al saldo total de un cliente** (ticket de feedback #11): el botón
   «Abonar saldo de cliente» en Ventas permite pagar de una vez todas las
   facturas pendientes de un cliente, con medios de pago combinados. El monto se
