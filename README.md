@@ -2,7 +2,7 @@
 
 Sistema de **punto de venta (POS)** web para Casi Obsceno: gestión de inventario con kardex, facturación de ventas con pagos parciales, caja con apertura/cierre por turno, clientes y usuarios con roles. End-to-end: React, FastAPI y PostgreSQL.
 
-> Novedades por versión: [CHANGELOG.md](CHANGELOG.md) · Roadmap: [MEJORAS_FUTURAS.md](MEJORAS_FUTURAS.md)
+> Novedades por versión: [CHANGELOG.md](CHANGELOG.md) · Novedades y cómo usarlas: [NOVEDADES.md](NOVEDADES.md) · Roadmap: [MEJORAS_FUTURAS.md](MEJORAS_FUTURAS.md)
 
 ## Características
 
